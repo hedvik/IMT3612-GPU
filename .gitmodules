@@ -1,0 +1,3 @@
+[submodule "shader/Triangle Display Submodule"]
+	path = shader/Triangle Display Submodule
+	url = https://hedvik@bitbucket.org/hedvik/vulkan-example-draw-a-triangle.git
