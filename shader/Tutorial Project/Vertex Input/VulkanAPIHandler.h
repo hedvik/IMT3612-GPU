@@ -17,10 +17,10 @@
 #include "ShaderTypes.h"
 
 const std::vector<Vertex> vertices = {
-	{ { -0.5f, -0.5f },{ 1.0f, 0.0f, 0.0f } },
-	{ { 0.5f, -0.5f },{ 0.0f, 1.0f, 0.0f } },
-	{ { 0.5f, 0.5f },{ 0.0f, 0.0f, 1.0f } },
-	{ { -0.5f, 0.5f },{ 1.0f, 1.0f, 1.0f } }
+	{ { -0.5f, -0.5f },{ 1.0f, 0.0f, 0.0f },{ 0.0f, 0.0f } },
+	{ { 0.5f, -0.5f },{ 0.0f, 1.0f, 0.0f },{ 1.0f, 0.0f } },
+	{ { 0.5f, 0.5f },{ 0.0f, 0.0f, 1.0f },{ 1.0f, 1.0f } },
+	{ { -0.5f, 0.5f },{ 1.0f, 1.0f, 1.0f },{ 0.0f, 1.0f } }
 };
 
 // https://github.com/Overv/VulkanTutorial/blob/master/images/vertex_vs_index.svg
@@ -104,6 +104,10 @@ private:
 	VDeleter<VkPipeline> graphicsPipeline{ device, vkDestroyPipeline };
 
 	VDeleter<VkCommandPool> commandPool{ device, vkDestroyCommandPool };
+	VDeleter<VkImage> textureImage{ device, vkDestroyImage };
+	VDeleter<VkImageView> textureImageView{ device, vkDestroyImageView };
+	VDeleter<VkSampler> textureSampler{ device, vkDestroySampler };
+	VDeleter<VkDeviceMemory> textureImageMemory{ device, vkFreeMemory };
 	std::vector<VkCommandBuffer> commandBuffers;
 
 	VDeleter<VkBuffer> vertexBuffer{ device, vkDestroyBuffer };
@@ -141,6 +145,9 @@ private:
 	void createGraphicsPipeline();
 	void createFramebuffers();
 	void createCommandPool();
+	void createTextureImage();
+	void createTextureImageView();
+	void createTextureSampler();
 	void createCommandBuffers();
 	void createVertexBuffer();
 	void createIndexBuffer();
@@ -150,17 +157,33 @@ private:
 	void createSemaphores();
 	void createShaderModule(const std::vector<char>& code, VDeleter<VkShaderModule>& shaderModule);
 	void recreateSwapChain();
+	VkCommandBuffer beginSingleTimeCommands();
+	void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+	void createImageView(VkImage image, VkFormat format, VDeleter<VkImageView>& imageView);
+
 	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 	SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 	std::vector<const char*> getRequiredExtensions();
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
 	void createBuffer(
 		VkDeviceSize size,
 		VkBufferUsageFlags usage,
 		VkMemoryPropertyFlags properties,
 		VDeleter<VkBuffer>& buffer,
 		VDeleter<VkDeviceMemory>& bufferMemory);
+	void createImage(
+		uint32_t width, 
+		uint32_t height, 
+		VkFormat format, 
+		VkImageTiling tiling, 
+		VkImageUsageFlags usage, 
+		VkMemoryPropertyFlags properties, 
+		VDeleter<VkImage>& image, 
+		VDeleter<VkDeviceMemory>& imageMemory);
 	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+	void copyImage(VkImage srcImage, VkImage dstImage, uint32_t width, uint32_t height);
 
 	// For choosing color depth
 	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);

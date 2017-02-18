@@ -27,6 +27,7 @@
     <ClInclude Include="consts.h" />
     <ClInclude Include="ShaderHandler.h" />
     <ClInclude Include="ShaderTypes.h" />
+    <ClInclude Include="stb_image.h" />
     <ClInclude Include="VDeleter.h" />
     <ClInclude Include="VulkanAPIHandler.h" />
   </ItemGroup>
