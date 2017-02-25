@@ -4,10 +4,17 @@
 #include <GLFW/glfw3.h>
 #include <glm\glm.hpp>
 #include <array>
+#include <glm/gtx/hash.hpp>
 #include "consts.h"
 
+struct UniformBufferObject {
+	glm::mat4 model;
+	glm::mat4 view;
+	glm::mat4 proj;
+};
+
 struct Vertex {
-	glm::vec2 position;
+	glm::vec3 position;
 	glm::vec3 color;
 	glm::vec2 texCoord;
 
@@ -26,7 +33,7 @@ struct Vertex {
 
 		attributeDescriptions[0].binding = 0;
 		attributeDescriptions[0].location = 0;
-		attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+		attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
 		attributeDescriptions[0].offset = offsetof(Vertex, position);
 
 		attributeDescriptions[1].binding = 0;
@@ -41,13 +48,22 @@ struct Vertex {
 
 		return attributeDescriptions;
 	}
+
+	bool operator==(const Vertex& other) const {
+		return position == other.position && color == other.color && texCoord == other.texCoord;
+	}
 };
 
-struct UniformBufferObject {
-	glm::mat4 model;
-	glm::mat4 view;
-	glm::mat4 proj;
-};
+// http://en.cppreference.com/w/cpp/utility/hash
+namespace std {
+	template<> struct hash<Vertex> {
+		size_t operator()(Vertex const& vertex) const {
+			return ((hash<glm::vec3>()(vertex.position) ^
+				    (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
+				    (hash<glm::vec2>()(vertex.texCoord) << 1);
+		}
+	};
+}
 
 
 
