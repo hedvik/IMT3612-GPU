@@ -8,15 +8,15 @@
 #include "consts.h"
 
 struct UniformBufferObject {
-	glm::mat4 model;
-	glm::mat4 view;
-	glm::mat4 proj;
+	glm::mat4 mvp;
+	// TODO: this is where we put our vector of light positions Id imagine
 };
 
 struct Vertex {
 	glm::vec3 position;
 	glm::vec3 color;
 	glm::vec2 texCoord;
+	glm::vec3 normal;
 
 	static VkVertexInputBindingDescription getBindingDescription() {
 		// The binding description describes at which rate the program will load data from memory throughout the vertices
@@ -46,11 +46,16 @@ struct Vertex {
 		attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
 		attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
 
+		attributeDescriptions[3].binding = 0;
+		attributeDescriptions[3].location = 3;
+		attributeDescriptions[3].format = VK_FORMAT_R32G32B32_SFLOAT;
+		attributeDescriptions[3].offset = offsetof(Vertex, normal);
+
 		return attributeDescriptions;
 	}
 
 	bool operator==(const Vertex& other) const {
-		return position == other.position && color == other.color && texCoord == other.texCoord;
+		return position == other.position && color == other.color && texCoord == other.texCoord && normal == other.normal;
 	}
 };
 
@@ -60,7 +65,8 @@ namespace std {
 		size_t operator()(Vertex const& vertex) const {
 			return ((hash<glm::vec3>()(vertex.position) ^
 				    (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
-				    (hash<glm::vec2>()(vertex.texCoord) << 1);
+				    (hash<glm::vec2>()(vertex.texCoord) << 1) ^
+					(hash<glm::vec3>()(vertex.normal) >> 1);
 		}
 	};
 }

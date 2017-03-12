@@ -13,12 +13,12 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
 #include <unordered_map>
+#include <memory>
 #include "VDeleter.h"
 #include "consts.h"
 #include "ShaderHandler.h"
 #include "ShaderTypes.h"
-
-
+#include "Scene.h"
 
 /*
 const std::vector<Vertex> vertices = {
@@ -33,13 +33,14 @@ const std::vector<Vertex> vertices = {
 	{ { -0.5f, 0.5f, -0.5f },{ 1.0f, 1.0f, 1.0f },{ 1.0f, 0.0f } }
 };*/
 
+/*
 // https://github.com/Overv/VulkanTutorial/blob/master/images/vertex_vs_index.svg
 const std::vector<uint16_t> indices = {
 	0, 1, 2, 2, 3, 0,
 	4, 5, 6, 6, 7, 4
-};
+}; */
 
-// Class primarily consisting of snippets from https://vulkan-tutorial.com/Drawing_a_triangle
+// Class primarily consisting of snippets from https://vulkan-tutorial.com
 class VulkanAPIHandler {
 public:
 	VulkanAPIHandler(GLFWwindow* GLFWwindow);
@@ -48,6 +49,29 @@ public:
 	void updateUniformBuffer();
 	static void onWindowResized(GLFWwindow* window, int width, int height);
 	VulkanAPIHandler* getPtr();
+	VkDevice getDevice();
+
+	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+	void createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, VDeleter<VkImageView>& imageView);
+
+	void createBuffer(
+		VkDeviceSize size,
+		VkBufferUsageFlags usage,
+		VkMemoryPropertyFlags properties,
+		VDeleter<VkBuffer>& buffer,
+		VDeleter<VkDeviceMemory>& bufferMemory);
+	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+
+	void createImage(
+		uint32_t width,
+		uint32_t height,
+		VkFormat format,
+		VkImageTiling tiling,
+		VkImageUsageFlags usage,
+		VkMemoryPropertyFlags properties,
+		VDeleter<VkImage>& image,
+		VDeleter<VkDeviceMemory>& imageMemory);
+	void copyImage(VkImage srcImage, VkImage dstImage, uint32_t width, uint32_t height);
 private:
 	//********************
 	// Consts
@@ -88,6 +112,8 @@ private:
 	//********************
 	// Member variables
 	//********************
+
+	Scene* scene;
 	GLFWwindow* window;
 
 	VDeleter<VkInstance> instance{ vkDestroyInstance };
@@ -115,26 +141,9 @@ private:
 	VDeleter<VkPipeline> graphicsPipeline{ device, vkDestroyPipeline };
 
 	VDeleter<VkCommandPool> commandPool{ device, vkDestroyCommandPool };
-	VDeleter<VkImage> textureImage{ device, vkDestroyImage };
-	VDeleter<VkImageView> textureImageView{ device, vkDestroyImageView };
-	VDeleter<VkSampler> textureSampler{ device, vkDestroySampler };
-	VDeleter<VkDeviceMemory> textureImageMemory{ device, vkFreeMemory };
 	std::vector<VkCommandBuffer> commandBuffers;
 
-	std::vector<Vertex> vertices;
-	std::vector<uint32_t> indices;
-	VDeleter<VkBuffer> vertexBuffer{ device, vkDestroyBuffer };
-	VDeleter<VkDeviceMemory> vertexBufferMemory{ device, vkFreeMemory };
-	VDeleter<VkBuffer> indexBuffer{ device, vkDestroyBuffer };
-	VDeleter<VkDeviceMemory> indexBufferMemory{ device, vkFreeMemory };
-
-	VDeleter<VkBuffer> uniformStagingBuffer{ device, vkDestroyBuffer };
-	VDeleter<VkDeviceMemory> uniformStagingBufferMemory{ device, vkFreeMemory };
-	VDeleter<VkBuffer> uniformBuffer{ device, vkDestroyBuffer };
-	VDeleter<VkDeviceMemory> uniformBufferMemory{ device, vkFreeMemory };
-
 	VDeleter<VkDescriptorPool> descriptorPool{ device, vkDestroyDescriptorPool };
-	VkDescriptorSet descriptorSet;
 
 	VDeleter<VkSemaphore> imageAvailableSemaphore{ device, vkDestroySemaphore };
 	VDeleter<VkSemaphore> renderFinishedSemaphore{ device, vkDestroySemaphore };
@@ -164,14 +173,12 @@ private:
 	void createFramebuffers();
 	void createCommandPool();
 	void createDepthResources();
-	void createTextureImage();
-	void createTextureImageView();
-	void createTextureSampler();
+	void createTextureImages();
+	void createTextureImageViews();
+	void createTextureSamplers();
 	void createCommandBuffers();
-	void loadModel();
-	void createVertexBuffer();
-	void createIndexBuffer();
-	void createUniformBuffer();
+	void createVertexIndexBuffers();
+	void createUniformBuffers();
 	void createDescriptorPool();
 	void createDescriptorSet();
 	void createSemaphores();
@@ -179,8 +186,6 @@ private:
 	void recreateSwapChain();
 	VkCommandBuffer beginSingleTimeCommands();
 	void endSingleTimeCommands(VkCommandBuffer commandBuffer);
-	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
-	void createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, VDeleter<VkImageView>& imageView);
 	VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 	VkFormat findDepthFormat();
 	bool hasStencilComponent(VkFormat format);
@@ -189,24 +194,6 @@ private:
 	SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 	std::vector<const char*> getRequiredExtensions();
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-
-	void createBuffer(
-		VkDeviceSize size,
-		VkBufferUsageFlags usage,
-		VkMemoryPropertyFlags properties,
-		VDeleter<VkBuffer>& buffer,
-		VDeleter<VkDeviceMemory>& bufferMemory);
-	void createImage(
-		uint32_t width, 
-		uint32_t height, 
-		VkFormat format, 
-		VkImageTiling tiling, 
-		VkImageUsageFlags usage, 
-		VkMemoryPropertyFlags properties, 
-		VDeleter<VkImage>& image, 
-		VDeleter<VkDeviceMemory>& imageMemory);
-	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
-	void copyImage(VkImage srcImage, VkImage dstImage, uint32_t width, uint32_t height);
 
 	// For choosing color depth
 	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);

@@ -19,12 +19,16 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Renderable.cpp" />
+    <ClCompile Include="Scene.cpp" />
     <ClCompile Include="ShaderHandler.cpp" />
     <ClCompile Include="Source.cpp" />
     <ClCompile Include="VulkanAPIHandler.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="consts.h" />
+    <ClInclude Include="Renderable.h" />
+    <ClInclude Include="Scene.h" />
     <ClInclude Include="ShaderHandler.h" />
     <ClInclude Include="ShaderTypes.h" />
     <ClInclude Include="stb_image.h" />
