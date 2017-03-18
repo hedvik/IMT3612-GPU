@@ -5,9 +5,15 @@
 #include "Renderable.h"
 #include "VulkanAPIHandler.h"
 
-Renderable::Renderable(VulkanAPIHandler* vkAPIHandler) {	
+Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec3 pos, std::string texPath, std::string modPath, glm::vec3 c) {
 	vulkanAPIHandler = vkAPIHandler;
 	device = vkAPIHandler->getDevice();
+	texturePath = texPath;
+	modelPath = modPath;
+	position = pos;
+	color = c;
+
+	loadModel();
 }
 
 Renderable::~Renderable() {	
@@ -73,7 +79,7 @@ void Renderable::createVertexIndexBuffers() {
 }
 
 void Renderable::createUniformBuffer() {
-	VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+	VkDeviceSize bufferSize = sizeof(RenderableUBO);
 
 	vulkanAPIHandler->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformStagingBuffer, uniformStagingBufferMemory);
 	vulkanAPIHandler->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, uniformBuffer, uniformBufferMemory);
@@ -91,14 +97,13 @@ int Renderable::numIndices() {
 	return indices.size();
 }
 
-void Renderable::loadModel(std::string path, glm::vec3 positionOffset, glm::vec3 color) {
+void Renderable::loadModel() {
 	tinyobj::attrib_t attrib;
 	std::vector<tinyobj::shape_t> shapes;
 	std::vector<tinyobj::material_t> materials;
 	std::string err;
-	position = positionOffset;
 
-	if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &err, path.c_str())) {
+	if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &err, modelPath.c_str())) {
 		throw std::runtime_error(err);
 	}
 
@@ -115,6 +120,8 @@ void Renderable::loadModel(std::string path, glm::vec3 positionOffset, glm::vec3
 				attrib.vertices[3 * index.vertex_index + 2]
 			};
 
+			vertex.color = color;
+
 			if (attrib.texcoords.size() != 0) {
 				// The same goes for texture coordinates where we use 2 instead
 				vertex.texCoord = {
@@ -123,7 +130,12 @@ void Renderable::loadModel(std::string path, glm::vec3 positionOffset, glm::vec3
 					1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
 				};
 			}
-			vertex.color = color;
+			
+			vertex.normal = {
+				attrib.normals[3 * index.normal_index + 0],
+				attrib.normals[3 * index.normal_index + 1],
+				attrib.normals[3 * index.normal_index + 2]
+			};
 
 			// Performing vertex deduplication
 			if (uniqueVertices.count(vertex) == 0) {
@@ -140,7 +152,7 @@ void Renderable::loadModel(std::string path, glm::vec3 positionOffset, glm::vec3
 void Renderable::createTextureImage() {
 	const int BYTES_PER_PIXEL = 4;
 	int texWidth, texHeight, texChannels;
-	stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+	stbi_uc* pixels = stbi_load(texturePath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 	VkDeviceSize imageSize = texWidth * texHeight * BYTES_PER_PIXEL;
 
 	if (!pixels) {
@@ -231,7 +243,33 @@ void Renderable::createTextureSampler() {
 	}
 }
 
-void Renderable::createDescriptorSet(VkDescriptorSetLayout descriptorSetLayout,VkDescriptorPool descriptorPool) {
+void Renderable::createDescriptorSetLayout() {
+	VkDescriptorSetLayoutBinding uboLayoutBinding = {};
+	uboLayoutBinding.binding = 0;
+	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	uboLayoutBinding.descriptorCount = 1;
+	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
+
+	VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
+	samplerLayoutBinding.binding = 1;
+	samplerLayoutBinding.descriptorCount = 1;
+	samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	samplerLayoutBinding.pImmutableSamplers = nullptr;
+	samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerLayoutBinding };
+	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = bindings.size();
+	layoutInfo.pBindings = bindings.data();
+
+	if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, descriptorSetLayout.replace()) != VK_SUCCESS) {
+		throw std::runtime_error("failed to create descriptor set layout!");
+	}
+}
+
+void Renderable::createDescriptorSet(VkDescriptorPool descriptorPool) {
 	VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
 	VkDescriptorSetAllocateInfo allocInfo = {};
 	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -247,7 +285,7 @@ void Renderable::createDescriptorSet(VkDescriptorSetLayout descriptorSetLayout,V
 	VkDescriptorBufferInfo bufferInfo = {};
 	bufferInfo.buffer = uniformBuffer;
 	bufferInfo.offset = 0;
-	bufferInfo.range = sizeof(UniformBufferObject);
+	bufferInfo.range = sizeof(RenderableUBO);
 
 	VkDescriptorImageInfo imageInfo = {};
 	imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -279,24 +317,25 @@ VkDescriptorSet Renderable::getDescriptorSet() {
 	return descriptorSet;
 }
 
-void Renderable::updateUniformBuffer() {
+VkDescriptorSetLayout Renderable::getDescriptorLayout() {
+	return descriptorSetLayout;
+}
+
+void Renderable::updateUniformBuffer(glm::mat4 projectionMatrix, glm::mat4 viewMatrix) {
 	static auto startTime = std::chrono::high_resolution_clock::now();
 
 	auto currentTime = std::chrono::high_resolution_clock::now();
 	float time = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime).count() / 1000.0f;
 
-	UniformBufferObject ubo = {};
+	RenderableUBO ubo = {};
 	modelMatrix = 
 		glm::translate(glm::mat4(1.0f), position) * 
-		glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0, 0, 1)) * 
+		glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0, 1, 0)) * 
 		glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, 0));
 
-	glm::mat4 view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-	glm::mat4 projection = glm::perspective(glm::radians(45.0f), WINDOW_WIDTH / (float)WINDOW_HEIGHT, 0.1f, 10.0f);
-	// We are flipping the y coordinate since GLM was originally made for OpenGL
-	projection[1][1] *= -1;
-
-	ubo.mvp = projection * view * modelMatrix;
+	ubo.mvp = projectionMatrix * viewMatrix * modelMatrix;
+	ubo.viewMatrix = viewMatrix;
+	ubo.modelMatrix = modelMatrix;
 
 	void* data;
 	vkMapMemory(device, uniformStagingBufferMemory, 0, sizeof(ubo), 0, &data);

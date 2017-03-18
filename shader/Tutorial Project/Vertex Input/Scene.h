@@ -6,20 +6,39 @@
 
 class VulkanAPIHandler;
 
+enum DescriptorLayoutType {
+	DESC_LAYOUT_RENDERABLE = 0,
+	DESC_LAYOUT_SCENE
+};
+
 class Scene {
 public:
-	Scene();
+	Scene(VulkanAPIHandler* vulkanAPI);
 	std::vector<std::shared_ptr<Renderable>> getRenderableObjects();
-	void loadModel(std::string path, glm::vec3 positionOffset = glm::vec3(0, 0, 0), glm::vec3 color = glm::vec3(1.0f, 1.0f, 1.0f), int index = 0);
-	void updateUniformBuffers();
+	void updateUniformBuffers(glm::mat4 projectionMatrix, glm::mat4 viewMatrix);
 	void createTextureImages();
 	void createTextureImageViews();
 	void createTextureSamplers();
 	void createVertexIndexBuffers();
 	void createUniformBuffers();
-	void createDescriptorSets(VkDescriptorSetLayout descSetLayout, VkDescriptorPool descPool);
-	void createRenderable(VulkanAPIHandler* vulkanAPI);
+	void createDescriptorSetLayouts();
+	void createDescriptorSets(VkDescriptorPool descPool);
+	void createRenderables();
+	VkDescriptorSetLayout getDescriptorSetLayout(DescriptorLayoutType type);
+	VkDescriptorSet getDescriptorSet();
 private:
+	VulkanAPIHandler* vulkanAPIHandler;
+	VkDescriptorSet descriptorSet;
+
 	std::vector<std::shared_ptr<Renderable>> renderableObjects{};
+	SceneUBO sceneUBO;
+
+	VDeleter<VkDevice> device;
+	VDeleter<VkDescriptorSetLayout> descriptorSetLayout{ device, vkDestroyDescriptorSetLayout };
+
+	VDeleter<VkBuffer> uniformStagingBuffer{ device, vkDestroyBuffer };
+	VDeleter<VkDeviceMemory> uniformStagingBufferMemory{ device, vkFreeMemory };
+	VDeleter<VkBuffer> uniformBuffer{ device, vkDestroyBuffer };
+	VDeleter<VkDeviceMemory> uniformBufferMemory{ device, vkFreeMemory };
 };
 

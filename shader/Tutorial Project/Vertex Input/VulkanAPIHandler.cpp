@@ -3,7 +3,6 @@
 VulkanAPIHandler::VulkanAPIHandler(GLFWwindow* GLFWwindow) {
 	physicalDevice = VK_NULL_HANDLE;
 	window = GLFWwindow;
-	scene = new Scene();
 
 	initVulkan();
 }
@@ -53,7 +52,12 @@ void VulkanAPIHandler::drawFrame() {
 }
 
 void VulkanAPIHandler::updateUniformBuffer() {
-	scene->updateUniformBuffers();
+	glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	glm::mat4 projection = glm::perspective(glm::radians(60.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
+	// We are flipping the y coordinate since GLM was originally made for OpenGL
+	projection[1][1] *= -1;
+
+	scene->updateUniformBuffers(projection, view);
 }
 
 void VulkanAPIHandler::onWindowResized(GLFWwindow * window, int width, int height) {
@@ -79,6 +83,10 @@ void VulkanAPIHandler::initVulkan() {
 	createSurface();
 	pickPhysicalDevice();
 	createLogicalDevice();
+	
+	scene = new Scene(this);
+	scene->createRenderables();
+	
 	createSwapChain();
 	createImageViews();
 	createRenderPass();
@@ -87,13 +95,9 @@ void VulkanAPIHandler::initVulkan() {
 	createCommandPool();
 	createDepthResources();
 	createFramebuffers();
-	scene->createRenderable(this);
-	scene->createRenderable(this);
 	createTextureImages();
 	createTextureImageViews();
 	createTextureSamplers();
-	scene->loadModel(MODEL_PATH);
-	scene->loadModel(MODEL_PATH, glm::vec3(1, 0, 1), glm::vec3(1, 0, 0), 1);
 	createVertexIndexBuffers();
 	createUniformBuffers();
 	createDescriptorPool();
@@ -432,29 +436,7 @@ void VulkanAPIHandler::createRenderPass() {
 }
 
 void VulkanAPIHandler::createDescriptorSetLayout() {
-	VkDescriptorSetLayoutBinding uboLayoutBinding = {};
-	uboLayoutBinding.binding = 0;
-	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	uboLayoutBinding.descriptorCount = 1;
-	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-	uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
-
-	VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
-	samplerLayoutBinding.binding = 1;
-	samplerLayoutBinding.descriptorCount = 1;
-	samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	samplerLayoutBinding.pImmutableSamplers = nullptr;
-	samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-	std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerLayoutBinding };
-	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
-	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = bindings.size();
-	layoutInfo.pBindings = bindings.data();
-
-	if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, descriptorSetLayout.replace()) != VK_SUCCESS) {
-		throw std::runtime_error("failed to create descriptor set layout!");
-	}
+	scene->createDescriptorSetLayouts();
 }
 
 void VulkanAPIHandler::createGraphicsPipeline() {
@@ -602,10 +584,10 @@ void VulkanAPIHandler::createGraphicsPipeline() {
 	*/
 
 	// Setting up the pipeline layout. This is where we specify any uniforms we want for the shaders
-	VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout };
+	VkDescriptorSetLayout setLayouts[] = { scene->getDescriptorSetLayout(DESC_LAYOUT_RENDERABLE), scene->getDescriptorSetLayout(DESC_LAYOUT_SCENE) };
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = 1;
+	pipelineLayoutInfo.setLayoutCount = std::size(setLayouts);
 	pipelineLayoutInfo.pSetLayouts = setLayouts;
 	pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
 	pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
@@ -738,6 +720,10 @@ void VulkanAPIHandler::createCommandBuffers() {
 		vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 		vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
+		// Binding buffers for renderables
+		VkDescriptorSet sceneDescSet = scene->getDescriptorSet();
+		vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &sceneDescSet, 0, nullptr);
+		
 		VkDeviceSize offsets[] = { 0 };
 		for (auto& renderable : scene->getRenderableObjects()) {
 			VkBuffer currentVertexBuffer[] = { renderable->getVertexBuffer() };
@@ -769,15 +755,16 @@ void VulkanAPIHandler::createUniformBuffers() {
 void VulkanAPIHandler::createDescriptorPool() {
 	std::array<VkDescriptorPoolSize, 2> poolSizes = {};
 	poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSizes[0].descriptorCount = 1;
+	// Each object has a uniform buffer + the scene has one too
+	poolSizes[0].descriptorCount = scene->getRenderableObjects().size() + 1;
 	poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	poolSizes[1].descriptorCount = 1;
+	poolSizes[1].descriptorCount = scene->getRenderableObjects().size();
 
 	VkDescriptorPoolCreateInfo poolInfo = {};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	poolInfo.poolSizeCount = poolSizes.size();
 	poolInfo.pPoolSizes = poolSizes.data();
-	poolInfo.maxSets = scene->getRenderableObjects().size();
+	poolInfo.maxSets = scene->getRenderableObjects().size() + 1;
 
 	if (vkCreateDescriptorPool(device, &poolInfo, nullptr, descriptorPool.replace()) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create descriptor pool!");
@@ -785,7 +772,7 @@ void VulkanAPIHandler::createDescriptorPool() {
 }
 
 void VulkanAPIHandler::createDescriptorSet() {
-	scene->createDescriptorSets(descriptorSetLayout, descriptorPool);
+	scene->createDescriptorSets(descriptorPool);
 }
 
 void VulkanAPIHandler::createSemaphores() {

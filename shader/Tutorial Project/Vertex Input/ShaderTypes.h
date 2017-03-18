@@ -7,9 +7,14 @@
 #include <glm/gtx/hash.hpp>
 #include "consts.h"
 
-struct UniformBufferObject {
+struct RenderableUBO {
 	glm::mat4 mvp;
-	// TODO: this is where we put our vector of light positions Id imagine
+	glm::mat4 viewMatrix;
+	glm::mat4 modelMatrix;
+};
+
+struct SceneUBO {
+	std::vector<glm::vec4> lightPositions{};
 };
 
 struct Vertex {
