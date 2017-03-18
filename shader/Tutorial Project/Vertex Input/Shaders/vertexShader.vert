@@ -8,9 +8,9 @@ layout(binding = 0) uniform RenderableUBO {
 	mat4 ModelMatrix;
 } renderableUBO;
 
-//layout(set = 1, binding = 2) uniform SceneUBO {
-//	vec4 lightPositions_worldspace[1];
-//} sceneUBO;
+layout(set = 1, binding = 2) uniform SceneUBO {
+	vec4 lightPositions_worldspace[1];
+} sceneUBO;
 
 // Input values
 layout(location = 0) in vec3 vertexPosition_modelspace;
