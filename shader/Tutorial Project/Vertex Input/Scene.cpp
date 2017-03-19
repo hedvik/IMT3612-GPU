@@ -5,7 +5,7 @@ Scene::Scene(VulkanAPIHandler* vulkanAPI) {
 	vulkanAPIHandler = vulkanAPI;
 	device = vulkanAPIHandler->getDevice();
 
-	sceneUBO.lightPositions.push_back(glm::vec4(0, 4, 0, 1));
+	sceneUBO.lightPositions[0] = (glm::vec4(0, 2, 2, 1));
 }
 
 std::vector<std::shared_ptr<Renderable>> Scene::getRenderableObjects() {
@@ -16,6 +16,13 @@ void Scene::updateUniformBuffers(glm::mat4 projectionMatrix, glm::mat4 viewMatri
 	for (auto& renderable : renderableObjects) {
 		renderable->updateUniformBuffer(projectionMatrix, viewMatrix);
 	}
+
+	void* data;
+	vkMapMemory(device, uniformStagingBufferMemory, 0, sizeof(sceneUBO), 0, &data);
+	memcpy(data, &sceneUBO, sizeof(sceneUBO));
+	vkUnmapMemory(device, uniformStagingBufferMemory);
+
+	vulkanAPIHandler->copyBuffer(uniformStagingBuffer, uniformBuffer, sizeof(sceneUBO));
 }
 
 void Scene::createTextureImages() {
@@ -47,7 +54,7 @@ void Scene::createUniformBuffers() {
 		renderable->createUniformBuffer();
 	}
 
-	VkDeviceSize bufferSize = sizeof(RenderableUBO);
+	VkDeviceSize bufferSize = sizeof(SceneUBO);
 
 	vulkanAPIHandler->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformStagingBuffer, uniformStagingBufferMemory);
 	vulkanAPIHandler->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, uniformBuffer, uniformBufferMemory);
@@ -59,19 +66,20 @@ void Scene::createDescriptorSetLayouts() {
 	}
 	
 	VkDescriptorSetLayoutBinding uboLayoutBinding = {};
-	uboLayoutBinding.binding = 2;
+	uboLayoutBinding.binding = 0;
 	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	uboLayoutBinding.descriptorCount = 1;
 	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 	uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
 
-	VkDescriptorSetLayoutBinding binding = uboLayoutBinding;
 	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	layoutInfo.bindingCount = 1;
-	layoutInfo.pBindings = &binding;
+	layoutInfo.pBindings = &uboLayoutBinding;
 
-	if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, descriptorSetLayout.replace()) != VK_SUCCESS) {
+	VkResult result = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, descriptorSetLayout.replace());
+	if (result != VK_SUCCESS) {
+		std::cout << result << std::endl;
 		throw std::runtime_error("failed to create descriptor set layout!");
 	} 
 }
@@ -97,13 +105,13 @@ void Scene::createDescriptorSets(VkDescriptorPool descPool) {
 	VkDescriptorBufferInfo bufferInfo = {};
 	bufferInfo.buffer = uniformBuffer;
 	bufferInfo.offset = 0;
-	bufferInfo.range = sizeof(sceneUBO);
+	bufferInfo.range = sizeof(SceneUBO);
 
 	VkWriteDescriptorSet descriptorWrites = {};
 
 	descriptorWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	descriptorWrites.dstSet = descriptorSet;
-	descriptorWrites.dstBinding = 2;
+	descriptorWrites.dstBinding = 0;
 	descriptorWrites.dstArrayElement = 0;
 	descriptorWrites.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	descriptorWrites.descriptorCount = 1;
@@ -114,8 +122,8 @@ void Scene::createDescriptorSets(VkDescriptorPool descPool) {
 
 void Scene::createRenderables() {
 	// This is where we initialise all of the renderables
-	renderableObjects.emplace_back(new Renderable(vulkanAPIHandler, glm::vec3(-1, 0, 0), COEURL_TEXTURE_PATH, CUBE_MODEL_PATH));
-	renderableObjects.emplace_back(new Renderable(vulkanAPIHandler, glm::vec3(1, 0, 0), DEFAULT_TEXTURE_PATH, CUBE_MODEL_PATH, glm::vec3(0.5, 0, 0.5)));
+	renderableObjects.emplace_back(new Renderable(vulkanAPIHandler, glm::vec4(-1, 0, 0, 1), DEFAULT_TEXTURE_PATH, SPHERE_MODEL_PATH, glm::vec4(1, 0, 1, 1)));
+	renderableObjects.emplace_back(new Renderable(vulkanAPIHandler, glm::vec4(1, 0, 0, 1), COEURL_TEXTURE_PATH, CUBE_MODEL_PATH, glm::vec4(0.5, 0, 0.5, 1)));
 }
 
 VkDescriptorSetLayout Scene::getDescriptorSetLayout(DescriptorLayoutType type) {

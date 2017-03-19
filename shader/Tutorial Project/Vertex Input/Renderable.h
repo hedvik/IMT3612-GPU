@@ -13,10 +13,8 @@ class VulkanAPIHandler;
 
 class Renderable {
 public:
-	Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec3 position, std::string texPath, std::string meshPath, glm::vec3 color = glm::vec3(1, 1, 1));
+	Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 position, std::string texPath, std::string meshPath, glm::vec4 color = glm::vec4(1, 1, 1, 1), bool invertedNormals = false);
 	~Renderable();
-	
-	glm::mat4 generateMVP(glm::mat4 projectionMatrix, glm::mat4 viewMatrix);
 	
 	VkBuffer getVertexBuffer();
 	VkBuffer getIndexBuffer();
@@ -38,7 +36,7 @@ protected:
 	std::vector<uint32_t> indices{};
 	glm::mat4 modelMatrix{1.f};
 	glm::vec3 position{};
-	glm::vec3 color{};
+	glm::vec4 color{};
 private:
 	VulkanAPIHandler* vulkanAPIHandler;
 	VDeleter<VkDevice> device;
@@ -64,6 +62,6 @@ private:
 	VDeleter<VkBuffer> uniformBuffer{ device, vkDestroyBuffer };
 	VDeleter<VkDeviceMemory> uniformBufferMemory{ device, vkFreeMemory };
 
-	void loadModel();
+	void loadModel(bool invertNormals);
 };
 

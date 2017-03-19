@@ -2,6 +2,8 @@
 #define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define RENDERABLE_UBO		0
+#define SCENE_UBO			1
 #include <GLFW/glfw3.h>
 #include <stdexcept>
 #include <vector>

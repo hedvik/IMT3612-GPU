@@ -5,7 +5,7 @@
 #include "Renderable.h"
 #include "VulkanAPIHandler.h"
 
-Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec3 pos, std::string texPath, std::string modPath, glm::vec3 c) {
+Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath, std::string modPath, glm::vec4 c, bool invertedNormals) {
 	vulkanAPIHandler = vkAPIHandler;
 	device = vkAPIHandler->getDevice();
 	texturePath = texPath;
@@ -13,14 +13,10 @@ Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec3 pos, std::strin
 	position = pos;
 	color = c;
 
-	loadModel();
+	loadModel(invertedNormals);
 }
 
 Renderable::~Renderable() {	
-}
-
-glm::mat4 Renderable::generateMVP(glm::mat4 projectionMatrix, glm::mat4 viewMatrix) {
-	return projectionMatrix * viewMatrix * modelMatrix;
 }
 
 void Renderable::createVertexIndexBuffers() {
@@ -97,7 +93,7 @@ int Renderable::numIndices() {
 	return indices.size();
 }
 
-void Renderable::loadModel() {
+void Renderable::loadModel(bool invertNormals) {
 	tinyobj::attrib_t attrib;
 	std::vector<tinyobj::shape_t> shapes;
 	std::vector<tinyobj::material_t> materials;
@@ -117,7 +113,8 @@ void Renderable::loadModel() {
 			vertex.position = {
 				attrib.vertices[3 * index.vertex_index + 0],
 				attrib.vertices[3 * index.vertex_index + 1],
-				attrib.vertices[3 * index.vertex_index + 2]
+				attrib.vertices[3 * index.vertex_index + 2],
+				1.0f
 			};
 
 			vertex.color = color;
@@ -127,15 +124,21 @@ void Renderable::loadModel() {
 				vertex.texCoord = {
 					attrib.texcoords[2 * index.texcoord_index + 0],
 					// The origin of texture coordinates in vulkan is in the top left corner so we are flipping this vertical component
-					1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+					1.0f - attrib.texcoords[2 * index.texcoord_index + 1],
+					0,
+					1
 				};
 			}
 			
-			vertex.normal = {
-				attrib.normals[3 * index.normal_index + 0],
-				attrib.normals[3 * index.normal_index + 1],
-				attrib.normals[3 * index.normal_index + 2]
-			};
+			if (attrib.normals.size() != 0) {
+				vertex.normal = {
+					attrib.normals[3 * index.normal_index + 0],
+					attrib.normals[3 * index.normal_index + 1],
+					attrib.normals[3 * index.normal_index + 2],
+					0
+				};
+				vertex.normal *= (invertNormals ? -1.f : 1.f);
+			}
 
 			// Performing vertex deduplication
 			if (uniqueVertices.count(vertex) == 0) {
