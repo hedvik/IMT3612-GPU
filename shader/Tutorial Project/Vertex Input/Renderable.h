@@ -13,13 +13,24 @@ class VulkanAPIHandler;
 
 class Renderable {
 public:
-	Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 position, std::string texPath, std::string meshPath, glm::vec4 color = glm::vec4(1, 1, 1, 1), bool invertedNormals = false);
+	Renderable(
+		VulkanAPIHandler* vkAPIHandler, 
+		glm::vec4 position, 
+		std::string texPath, 
+		std::string meshPath, 
+		glm::vec3 renderableScale = glm::vec3(1.f, 1.f, 1.f),
+		glm::vec4 color = glm::vec4(1, 1, 1, 1), 
+		bool invertedNormals = false);
 	~Renderable();
-	
+
+	int numIndices();
+	void updateUniformBuffer(glm::mat4 projectionMatrix, glm::mat4 viewMatrix);
+
 	VkBuffer getVertexBuffer();
 	VkBuffer getIndexBuffer();
-	
-	int numIndices();
+	VkDescriptorSet getDescriptorSet();
+	VkDescriptorSetLayout getDescriptorLayout();
+
 	void createVertexIndexBuffers();
 	void createUniformBuffer();
 	void createTextureImage();
@@ -27,15 +38,12 @@ public:
 	void createTextureSampler();
 	void createDescriptorSetLayout();
 	void createDescriptorSet(VkDescriptorPool descriptorPool);
-	void updateUniformBuffer(glm::mat4 projectionMatrix, glm::mat4 viewMatrix);
-
-	VkDescriptorSet getDescriptorSet();
-	VkDescriptorSetLayout getDescriptorLayout();
 protected:
+	glm::vec3 position{};
+	glm::vec3 scale{};
 	std::vector<Vertex> vertices{};
 	std::vector<uint32_t> indices{};
 	glm::mat4 modelMatrix{1.f};
-	glm::vec3 position{};
 	glm::vec4 color{};
 private:
 	VulkanAPIHandler* vulkanAPIHandler;

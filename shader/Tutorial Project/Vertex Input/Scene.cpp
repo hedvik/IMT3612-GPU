@@ -122,8 +122,8 @@ void Scene::createDescriptorSets(VkDescriptorPool descPool) {
 
 void Scene::createRenderables() {
 	// This is where we initialise all of the renderables
-	renderableObjects.emplace_back(new Renderable(vulkanAPIHandler, glm::vec4(-1, 0, 0, 1), DEFAULT_TEXTURE_PATH, SPHERE_MODEL_PATH, glm::vec4(1, 0, 1, 1)));
-	renderableObjects.emplace_back(new Renderable(vulkanAPIHandler, glm::vec4(1, 0, 0, 1), COEURL_TEXTURE_PATH, CUBE_MODEL_PATH, glm::vec4(0.5, 0, 0.5, 1)));
+	renderableObjects.emplace_back(new Renderable(vulkanAPIHandler, glm::vec4(-1, 0, 0, 1), DEFAULT_TEXTURE_PATH, SPHERE_MODEL_PATH, glm::vec3(1, 1, 1), glm::vec4(1, 0, 1, 1), false));
+	renderableObjects.emplace_back(new Renderable(vulkanAPIHandler, glm::vec4(1, 0, 0, 1), COEURL_TEXTURE_PATH, CUBE_MODEL_PATH, glm::vec3(1, 1, 1), glm::vec4(0.5, 0, 0.5, 1)));
 }
 
 VkDescriptorSetLayout Scene::getDescriptorSetLayout(DescriptorLayoutType type) {

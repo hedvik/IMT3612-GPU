@@ -18,7 +18,7 @@ layout(location = 0) out vec4 outColor;
 const vec4 WHITE = vec4( 1.0, 1.0, 1.0, 1.0 );
 
 // Default material for everything. Might want this as a part of the RenderableUBO
-const float ambientComponent = 0.1f;
+const float ambientComponent = 0.25f;
 const float diffuseComponent = 0.5f;
 const vec4 specularComponent = vec4(1.0, 1.0, 1.0, 1.0);
 
@@ -49,14 +49,16 @@ void main() {
 	vec4 materialDiffuseColor;
 	vec4 materialAmbientColor;
 	vec4 materialSpecularColor;
-	float specularExponent = 5.0;
+	float specularExponent = 128.0;
 	
-	// Light attenuation values
-	float k0 = 1.0;
-	float k1 = 0.1;
-	float k2;
+	// Light attenuation values. Might want to send these as tweakable uniforms for the sake of testing
+	float k0 = 0.01;
+	float k1;
 	float minimumLight = 500;
 	float radius = 300;
+	
+	float specularGain = 1.0;
+	float diffuseGain = 1;
 	
 	outColor = vec4(0, 0, 0, 1); 
 	vec4 coloredTexture = texture(textureSampler, fragmentTextureCoordinate.xy) * fragmentColor;
@@ -80,9 +82,9 @@ void main() {
 		vec4 specularColor = calculateSpecularColor(materialSpecularColor, normal, lightDirection, specularExponent, WHITE);
 		
 		// Light attenuation. Based on information from http://gamedev.stackexchange.com/questions/56897/glsl-light-attenuation-color-and-intensity-formula
-		k2 = 1.0 / (pow(radius, 2) * minimumLight);
-		float attenuation = 1.0 / (k0 + k1 * dist + k2 * pow(dist, 2));
-		outColor += materialAmbientColor + attenuation*(diffuseColor + specularColor); 
+		k1 = 1.0 / (pow(radius, 2) * minimumLight);
+		float attenuation = 1.0 / (1.0 + k0 * dist + k1 * pow(dist, 2));
+		outColor += materialAmbientColor + attenuation*(diffuseGain * diffuseColor + specularColor * specularGain); 
 	}
 }
 
@@ -107,26 +109,12 @@ vec4 calculateSpecularColor(vec4 materialSpecularColor, vec4 normal, vec4 lightD
 	// Eye vector (towards the camera)
 	vec4 eyeDirection = vec4(0, 0, 0, 1.0f) - vertexPosition_cameraspace;
 	eyeDirection = normalize(eyeDirection);
-		
-	// Direction in which the triangle reflects the light
-	vec4 lightReflectionDirection = reflect(-lightDirection, normal);
-
-	// We need to make sure that it's possible for the light to hit the plane.
-	// By multiplying the color with this are removing specular light bleed from behind objects.
-	float normalLightDotProduct = dot(normal, lightDirection);
-	normalLightDotProduct = ceil(clamp(normalLightDotProduct, 0.0, 1.0));
 	
-	// Cosine of the angle between the Eye vector and the Reflect vector,
-	// clamped to 0
-	//  - Looking into the reflection -> 1
-	//  - Looking elsewhere -> < 1
-	float eyeReflectionDotProduct = dot(eyeDirection, lightReflectionDirection);
-	eyeReflectionDotProduct = clamp(eyeReflectionDotProduct, 0.0, 1.0);
+	// Blinn-Phong calculation of the specular light
+	vec4 halfDirection = normalize(lightDirection + eyeDirection);
+	float specularAngle = max(dot(halfDirection, normal), 0.0);
 	
-	// The specular color depends on the color of the light,
-	// the eye light reflection dot product by a power to control the size of the specular,
-	// and our specular material.
-	vec4 specularColor = lightColor * pow(eyeReflectionDotProduct, specularExponent) * materialSpecularColor * normalLightDotProduct;
+	vec4 specularColor = lightColor * pow(specularAngle, specularExponent) * materialSpecularColor;
 
 	return specularColor;
 }

@@ -5,13 +5,14 @@
 #include "Renderable.h"
 #include "VulkanAPIHandler.h"
 
-Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath, std::string modPath, glm::vec4 c, bool invertedNormals) {
+Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath, std::string modPath, glm::vec3 renderableScale, glm::vec4 c, bool invertedNormals) {
 	vulkanAPIHandler = vkAPIHandler;
 	device = vkAPIHandler->getDevice();
 	texturePath = texPath;
 	modelPath = modPath;
 	position = pos;
 	color = c;
+	scale = renderableScale;
 
 	loadModel(invertedNormals);
 }
@@ -334,7 +335,8 @@ void Renderable::updateUniformBuffer(glm::mat4 projectionMatrix, glm::mat4 viewM
 	modelMatrix = 
 		glm::translate(glm::mat4(1.0f), position) * 
 		glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0, 1, 0)) * 
-		glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, 0));
+		glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, 0)) * 
+		glm::scale(glm::mat4(1.0f), scale);
 
 	ubo.mvp = projectionMatrix * viewMatrix * modelMatrix;
 	ubo.viewMatrix = viewMatrix;

@@ -9,6 +9,6 @@ const int NUM_LIGHTS = 1;
 const int NUM_DESCRIPTOR_SET_LAYOUTS = 2;
 
 const std::string CUBE_MODEL_PATH = "Models/cube.obj";
-const std::string SPHERE_MODEL_PATH = "Models/sphere.obj";
+const std::string SPHERE_MODEL_PATH = "Models/HQ_sphere.obj";
 const std::string COEURL_TEXTURE_PATH = "Textures/coeurl.png";
 const std::string DEFAULT_TEXTURE_PATH = "Textures/default.png";
