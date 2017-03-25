@@ -3,6 +3,7 @@
 #include <vector>
 #include <glm\glm.hpp>
 #include "Renderable.h"
+#include "RenderableMaze.h"
 
 class VulkanAPIHandler;
 

@@ -20,7 +20,7 @@ const vec4 WHITE = vec4( 1.0, 1.0, 1.0, 1.0 );
 // Default material for everything. Might want this as a part of the RenderableUBO
 const float ambientComponent = 0.25f;
 const float diffuseComponent = 0.5f;
-const vec4 specularComponent = vec4(1.0, 1.0, 1.0, 1.0);
+const vec4 specularComponent = WHITE;
 
 // Functions
 /**
@@ -49,16 +49,17 @@ void main() {
 	vec4 materialDiffuseColor;
 	vec4 materialAmbientColor;
 	vec4 materialSpecularColor;
+	
+	// We might want these as part of a renderable's material
 	float specularExponent = 128.0;
+	float specularGain = 1;
+	float diffuseGain = 1;
 	
 	// Light attenuation values. Might want to send these as tweakable uniforms for the sake of testing
 	float k0 = 0.01;
 	float k1;
 	float minimumLight = 500;
 	float radius = 300;
-	
-	float specularGain = 1.0;
-	float diffuseGain = 1;
 	
 	outColor = vec4(0, 0, 0, 1); 
 	vec4 coloredTexture = texture(textureSampler, fragmentTextureCoordinate.xy) * fragmentColor;
@@ -110,7 +111,7 @@ vec4 calculateSpecularColor(vec4 materialSpecularColor, vec4 normal, vec4 lightD
 	vec4 eyeDirection = vec4(0, 0, 0, 1.0f) - vertexPosition_cameraspace;
 	eyeDirection = normalize(eyeDirection);
 	
-	// Blinn-Phong calculation of the specular light
+	// Blinn-Phong calculation of the specular light. Based on https://en.wikipedia.org/wiki/Blinn%E2%80%93Phong_shading_model#Fragment_shader
 	vec4 halfDirection = normalize(lightDirection + eyeDirection);
 	float specularAngle = max(dot(halfDirection, normal), 0.0);
 	

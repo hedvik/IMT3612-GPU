@@ -6,16 +6,18 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include "ShaderTypes.h"
+#include <vector>
+#include "Structs.h"
 #include "VDeleter.h"
 
 class VulkanAPIHandler;
 
 class Renderable {
 public:
+	Renderable();
 	Renderable(
 		VulkanAPIHandler* vkAPIHandler, 
-		glm::vec4 position, 
+		glm::vec4 pos, 
 		std::string texPath, 
 		std::string meshPath, 
 		glm::vec3 renderableScale = glm::vec3(1.f, 1.f, 1.f),
@@ -39,12 +41,14 @@ public:
 	void createDescriptorSetLayout();
 	void createDescriptorSet(VkDescriptorPool descriptorPool);
 protected:
-	glm::vec3 position{};
-	glm::vec3 scale{};
+	Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath);
+
+	glm::vec3 position{0.f, 0.f, 0.f};
+	glm::vec3 scale{1.f, 1.f, 1.f};
 	std::vector<Vertex> vertices{};
 	std::vector<uint32_t> indices{};
 	glm::mat4 modelMatrix{1.f};
-	glm::vec4 color{};
+	glm::vec4 baseColor{};
 private:
 	VulkanAPIHandler* vulkanAPIHandler;
 	VDeleter<VkDevice> device;
