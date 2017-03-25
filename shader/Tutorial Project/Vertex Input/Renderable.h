@@ -44,6 +44,7 @@ protected:
 	Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath);
 
 	glm::vec3 position{0.f, 0.f, 0.f};
+	glm::vec3 position{};
 	glm::vec3 scale{1.f, 1.f, 1.f};
 	std::vector<Vertex> vertices{};
 	std::vector<uint32_t> indices{};
