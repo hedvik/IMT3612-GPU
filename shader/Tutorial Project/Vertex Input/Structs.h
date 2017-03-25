@@ -64,6 +64,22 @@ struct Vertex {
 	}
 };
 
+struct CollisionRect{
+	int x{0};
+	int y{0};
+	int h{0};
+	int w{0};
+
+	CollisionRect() {};
+
+	CollisionRect(int x, int y, int h, int w) {
+		this->x = x;
+		this->y = y;
+		this->h = h;
+		this->w = w;
+	}
+};
+
 // http://en.cppreference.com/w/cpp/utility/hash
 namespace std {
 	template<> struct hash<Vertex> {
@@ -75,6 +91,3 @@ namespace std {
 		}
 	};
 }
-
-
-

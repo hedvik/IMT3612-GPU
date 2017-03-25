@@ -20,18 +20,22 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Renderable.cpp" />
+    <ClCompile Include="RenderableMaze.cpp" />
     <ClCompile Include="Scene.cpp" />
     <ClCompile Include="ShaderHandler.cpp" />
     <ClCompile Include="Source.cpp" />
+    <ClCompile Include="tinyxml2.cpp" />
     <ClCompile Include="VulkanAPIHandler.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="consts.h" />
     <ClInclude Include="Renderable.h" />
+    <ClInclude Include="RenderableMaze.h" />
     <ClInclude Include="Scene.h" />
     <ClInclude Include="ShaderHandler.h" />
-    <ClInclude Include="ShaderTypes.h" />
+    <ClInclude Include="Structs.h" />
     <ClInclude Include="stb_image.h" />
+    <ClInclude Include="tinyxml2.h" />
     <ClInclude Include="VDeleter.h" />
     <ClInclude Include="VulkanAPIHandler.h" />
   </ItemGroup>

@@ -19,7 +19,7 @@
 #include "VDeleter.h"
 #include "consts.h"
 #include "ShaderHandler.h"
-#include "ShaderTypes.h"
+#include "Structs.h"
 #include "Scene.h"
 
 /*

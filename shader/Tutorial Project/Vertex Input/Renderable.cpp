@@ -5,16 +5,26 @@
 #include "Renderable.h"
 #include "VulkanAPIHandler.h"
 
+Renderable::Renderable() {
+}
+
 Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath, std::string modPath, glm::vec3 renderableScale, glm::vec4 c, bool invertedNormals) {
 	vulkanAPIHandler = vkAPIHandler;
 	device = vkAPIHandler->getDevice();
 	texturePath = texPath;
 	modelPath = modPath;
 	position = pos;
-	color = c;
+	baseColor = c;
 	scale = renderableScale;
 
 	loadModel(invertedNormals);
+}
+
+Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath) {
+	vulkanAPIHandler = vkAPIHandler;
+	device = vkAPIHandler->getDevice();
+	texturePath = texPath;
+	position = pos;
 }
 
 Renderable::~Renderable() {	
@@ -118,7 +128,7 @@ void Renderable::loadModel(bool invertNormals) {
 				1.0f
 			};
 
-			vertex.color = color;
+			vertex.color = baseColor;
 
 			if (attrib.texcoords.size() != 0) {
 				// The same goes for texture coordinates where we use 2 instead
@@ -147,7 +157,6 @@ void Renderable::loadModel(bool invertNormals) {
 				vertices.push_back(vertex);
 			}
 
-			vertices.push_back(vertex);
 			indices.push_back(uniqueVertices[vertex]);
 		}
 	}
@@ -332,12 +341,16 @@ void Renderable::updateUniformBuffer(glm::mat4 projectionMatrix, glm::mat4 viewM
 	float time = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime).count() / 1000.0f;
 
 	RenderableUBO ubo = {};
+	
+	/*
 	modelMatrix = 
 		glm::translate(glm::mat4(1.0f), position) * 
 		glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0, 1, 0)) * 
 		glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, 0)) * 
 		glm::scale(glm::mat4(1.0f), scale);
+	*/
 
+	modelMatrix = glm::translate(glm::mat4(1.0f), position) * glm::scale(glm::mat4(1.0f), scale);
 	ubo.mvp = projectionMatrix * viewMatrix * modelMatrix;
 	ubo.viewMatrix = viewMatrix;
 	ubo.modelMatrix = modelMatrix;

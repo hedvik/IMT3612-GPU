@@ -52,8 +52,8 @@ void VulkanAPIHandler::drawFrame() {
 }
 
 void VulkanAPIHandler::updateUniformBuffer() {
-	glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 4.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-	glm::mat4 projection = glm::perspective(glm::radians(60.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
+	glm::mat4 view = glm::lookAt(glm::vec3(400.f, 400.f, 950.f), glm::vec3(400.0f, -100.0f, 400.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	glm::mat4 projection = glm::perspective(glm::radians(60.0f), swapChainExtent.width / (float)swapChainExtent.height, 1.5f, 1000.0f);
 	// We are flipping the y coordinate since GLM was originally made for OpenGL
 	projection[1][1] *= -1;
 
