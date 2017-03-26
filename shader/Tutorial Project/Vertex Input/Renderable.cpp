@@ -8,11 +8,21 @@
 Renderable::Renderable() {
 }
 
-Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath, std::string modPath, glm::vec3 renderableScale, glm::vec4 c, bool invertedNormals) {
+Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath, std::string meshPath, bool invertedNormals) {
 	vulkanAPIHandler = vkAPIHandler;
 	device = vkAPIHandler->getDevice();
 	texturePath = texPath;
-	modelPath = modPath;
+	modelPath = meshPath;
+	position = pos;
+
+	loadModel(invertedNormals);
+}
+
+Renderable::Renderable(VulkanAPIHandler * vkAPIHandler, glm::vec4 pos, std::string texPath, std::string meshPath, glm::vec3 renderableScale, glm::vec4 c, bool invertedNormals) {
+	vulkanAPIHandler = vkAPIHandler;
+	device = vkAPIHandler->getDevice();
+	texturePath = texPath;
+	modelPath = meshPath;
 	position = pos;
 	baseColor = c;
 	scale = renderableScale;
@@ -326,6 +336,9 @@ void Renderable::createDescriptorSet(VkDescriptorPool descriptorPool) {
 	vkUpdateDescriptorSets(device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
 }
 
+void Renderable::update(float deltaTime) {
+}
+
 VkDescriptorSet Renderable::getDescriptorSet() {
 	return descriptorSet;
 }
@@ -335,11 +348,6 @@ VkDescriptorSetLayout Renderable::getDescriptorLayout() {
 }
 
 void Renderable::updateUniformBuffer(glm::mat4 projectionMatrix, glm::mat4 viewMatrix) {
-	static auto startTime = std::chrono::high_resolution_clock::now();
-
-	auto currentTime = std::chrono::high_resolution_clock::now();
-	float time = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime).count() / 1000.0f;
-
 	RenderableUBO ubo = {};
 	
 	/*

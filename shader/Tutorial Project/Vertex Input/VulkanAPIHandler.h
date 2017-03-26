@@ -49,9 +49,11 @@ public:
 	~VulkanAPIHandler();
 	void drawFrame(); 
 	void updateUniformBuffer();
+	void update(float deltaTime);
 	static void onWindowResized(GLFWwindow* window, int width, int height);
 	VulkanAPIHandler* getPtr();
 	VkDevice getDevice();
+	void handleInput(GLFWKeyEvent event);
 
 	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
 	void createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, VDeleter<VkImageView>& imageView);

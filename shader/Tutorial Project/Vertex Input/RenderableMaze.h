@@ -7,6 +7,7 @@ class RenderableMaze : public Renderable {
 public:
 	RenderableMaze(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath);
 	~RenderableMaze();
+	std::vector<CollisionRect> getWalls();
 private:
 	const int WALL_HEIGHT{30};
 	const float FLOOR_OFFSET_Y{-1.5f};

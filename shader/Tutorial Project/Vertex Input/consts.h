@@ -1,6 +1,6 @@
 #pragma once
-const int WINDOW_WIDTH = 800;
-const int WINDOW_HEIGHT = 600;
+const int WINDOW_WIDTH = 1280;
+const int WINDOW_HEIGHT = 720;
 const int NUM_VERTEX_ATTRIBUTES = 4;
 const int NUM_ATTACHMENTS = 2;
 const int NUM_LIGHTS = 1;

@@ -80,6 +80,22 @@ struct CollisionRect{
 	}
 };
 
+struct GLFWKeyEvent {
+	GLFWwindow* window;
+	int key;
+	int scancode;
+	int action;
+	int mods;
+
+	GLFWKeyEvent(GLFWwindow* window, int key, int scancode, int action, int mods) {
+		this->window = window;
+		this->key = key;
+		this->scancode = scancode;
+		this->action = action;
+		this->mods = mods;
+	}
+};
+
 // http://en.cppreference.com/w/cpp/utility/hash
 namespace std {
 	template<> struct hash<Vertex> {

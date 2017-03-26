@@ -60,6 +60,10 @@ void VulkanAPIHandler::updateUniformBuffer() {
 	scene->updateUniformBuffers(projection, view);
 }
 
+void VulkanAPIHandler::update(float deltaTime) {
+	scene->update(deltaTime);
+}
+
 void VulkanAPIHandler::onWindowResized(GLFWwindow * window, int width, int height) {
 	if (width == 0 || height == 0) {
 		return;
@@ -75,6 +79,10 @@ VulkanAPIHandler* VulkanAPIHandler::getPtr() {
 
 VkDevice VulkanAPIHandler::getDevice() {
 	return device;
+}
+
+void VulkanAPIHandler::handleInput(GLFWKeyEvent event) {
+	scene->handleInput(event);
 }
 
 void VulkanAPIHandler::initVulkan() {

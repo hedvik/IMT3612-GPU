@@ -20,8 +20,14 @@ public:
 		glm::vec4 pos, 
 		std::string texPath, 
 		std::string meshPath, 
-		glm::vec3 renderableScale = glm::vec3(1.f, 1.f, 1.f),
-		glm::vec4 color = glm::vec4(1, 1, 1, 1), 
+		bool invertedNormals = false);
+	Renderable(
+		VulkanAPIHandler* vkAPIHandler,
+		glm::vec4 pos,
+		std::string texPath,
+		std::string meshPath,
+		glm::vec3 renderableScale,
+		glm::vec4 c = glm::vec4(1.f, 1.f, 1.f, 1.f),
 		bool invertedNormals = false);
 	~Renderable();
 
@@ -40,18 +46,18 @@ public:
 	void createTextureSampler();
 	void createDescriptorSetLayout();
 	void createDescriptorSet(VkDescriptorPool descriptorPool);
+	virtual void update(float deltaTime);
 protected:
 	Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath);
 
+	VulkanAPIHandler* vulkanAPIHandler;
 	glm::vec3 position{0.f, 0.f, 0.f};
-	glm::vec3 position{};
 	glm::vec3 scale{1.f, 1.f, 1.f};
 	std::vector<Vertex> vertices{};
 	std::vector<uint32_t> indices{};
 	glm::mat4 modelMatrix{1.f};
-	glm::vec4 baseColor{};
+	glm::vec4 baseColor{1.f, 1.f, 1.f, 1.f};
 private:
-	VulkanAPIHandler* vulkanAPIHandler;
 	VDeleter<VkDevice> device;
 	VkDescriptorSet descriptorSet;
 

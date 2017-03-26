@@ -18,6 +18,10 @@ RenderableMaze::RenderableMaze(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, st
 RenderableMaze::~RenderableMaze() {
 }
 
+std::vector<CollisionRect> RenderableMaze::getWalls() {
+	return wallCollisionRects;
+}
+
 void RenderableMaze::readSVGRects(const char* fileName) {
 	tinyxml2::XMLDocument doc;
 	doc.LoadFile(fileName);
@@ -119,28 +123,16 @@ void RenderableMaze::pushVertexFace(std::vector<glm::vec4> vertexPositions, glm:
 }
 
 void RenderableMaze::addFloorVertices() {
-	// We calculate the bounds of the maze first
-	int highestX{0};
-	int highestY{0};
-	int lowestX{0};
-	int lowestY{0};
-
 	// Finds the lowest and highest x/y values so we know where to put our floor plane
-	for (auto& wall : wallCollisionRects) {
-		if (wall.x + wall.w > highestX) {
-			highestX = wall.x + wall.w;
-		}
-		else if (wall.x < lowestX) {
-			lowestX = wall.x;
-		}
-
-		if (wall.y + wall.h > highestY) {
-			highestY = wall.y + wall.h;
-		}
-		else if (wall.y < lowestY) {
-			lowestY = wall.y;
-		}
-	}
+	auto minX = std::min_element(wallCollisionRects.begin(), wallCollisionRects.end(), [](const CollisionRect& a, const CollisionRect& b) { return a.x < b.x; });
+	auto maxX = std::max_element(wallCollisionRects.begin(), wallCollisionRects.end(), [](const CollisionRect& a, const CollisionRect& b) { return a.x + a.w < b.x + b.w; });
+	auto minY = std::min_element(wallCollisionRects.begin(), wallCollisionRects.end(), [](const CollisionRect& a, const CollisionRect& b) { return a.y < b.y; });
+	auto maxY = std::max_element(wallCollisionRects.begin(), wallCollisionRects.end(), [](const CollisionRect& a, const CollisionRect& b) { return a.y + a.h < b.y + b.h; });
+	
+	int highestX{ (*maxX).x + (*maxX).w };
+	int highestY{ (*maxY).y + (*maxY).h };
+	int lowestX{ (*minX).x };
+	int lowestY{ (*minY).y };
 
 	std::vector<glm::vec4> vertices{ 
 		{lowestX, FLOOR_OFFSET_Y, highestY, 1.f},

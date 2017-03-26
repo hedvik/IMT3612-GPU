@@ -4,6 +4,8 @@
 #include <glm\glm.hpp>
 #include "Renderable.h"
 #include "RenderableMaze.h"
+#include "Moveable.h"
+#include "Pacman.h"
 
 class VulkanAPIHandler;
 
@@ -17,6 +19,8 @@ public:
 	Scene(VulkanAPIHandler* vulkanAPI);
 	std::vector<std::shared_ptr<Renderable>> getRenderableObjects();
 	void updateUniformBuffers(glm::mat4 projectionMatrix, glm::mat4 viewMatrix);
+	void update(float deltaTime);
+	void handleInput(GLFWKeyEvent event);
 	void createTextureImages();
 	void createTextureImageViews();
 	void createTextureSamplers();

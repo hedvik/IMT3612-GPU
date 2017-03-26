@@ -25,6 +25,16 @@ void Scene::updateUniformBuffers(glm::mat4 projectionMatrix, glm::mat4 viewMatri
 	vulkanAPIHandler->copyBuffer(uniformStagingBuffer, uniformBuffer, sizeof(sceneUBO));
 }
 
+void Scene::update(float deltaTime) {
+	for (auto& renderable : renderableObjects) {
+		renderable->update(deltaTime);
+	}
+}
+
+void Scene::handleInput(GLFWKeyEvent event) {
+	std::dynamic_pointer_cast<Pacman>(renderableObjects[1])->handleInput(event);
+}
+
 void Scene::createTextureImages() {
 	for (auto& renderable : renderableObjects) {
 		renderable->createTextureImage();
@@ -122,9 +132,9 @@ void Scene::createDescriptorSets(VkDescriptorPool descPool) {
 
 void Scene::createRenderables() {
 	// This is where we initialise all of the renderables
-	renderableObjects.emplace_back(new Renderable(vulkanAPIHandler, glm::vec4(350, 50, 400, 1), DEFAULT_TEXTURE_PATH, SPHERE_MODEL_PATH, glm::vec3(30, 30, 30), glm::vec4(1, 0, 1, 1)));
-	renderableObjects.emplace_back(new Renderable(vulkanAPIHandler, glm::vec4(450, 50, 400, 1), COEURL_TEXTURE_PATH, CUBE_MODEL_PATH, glm::vec3(30, 30, 30)));
 	renderableObjects.emplace_back(new RenderableMaze(vulkanAPIHandler, glm::vec4(0, 0, 0, 1), DEFAULT_TEXTURE_PATH));
+	renderableObjects.emplace_back(new Pacman(std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[0]), vulkanAPIHandler, glm::vec4(350, 50, 400, 1), DEFAULT_TEXTURE_PATH, SPHERE_MODEL_PATH, glm::vec3(30, 30, 30), glm::vec4(1, 0, 1, 1)));
+	renderableObjects.emplace_back(new Renderable(vulkanAPIHandler, glm::vec4(450, 50, 400, 1), COEURL_TEXTURE_PATH, CUBE_MODEL_PATH, glm::vec3(30, 30, 30)));
 }
 
 VkDescriptorSetLayout Scene::getDescriptorSetLayout(DescriptorLayoutType type) {

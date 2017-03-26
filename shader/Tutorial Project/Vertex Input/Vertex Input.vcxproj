@@ -19,6 +19,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CollisionHandler.cpp" />
+    <ClCompile Include="Moveable.cpp" />
+    <ClCompile Include="Pacman.cpp" />
     <ClCompile Include="Renderable.cpp" />
     <ClCompile Include="RenderableMaze.cpp" />
     <ClCompile Include="Scene.cpp" />
@@ -28,7 +31,10 @@
     <ClCompile Include="VulkanAPIHandler.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CollisionHandler.h" />
     <ClInclude Include="consts.h" />
+    <ClInclude Include="Moveable.h" />
+    <ClInclude Include="Pacman.h" />
     <ClInclude Include="Renderable.h" />
     <ClInclude Include="RenderableMaze.h" />
     <ClInclude Include="Scene.h" />
