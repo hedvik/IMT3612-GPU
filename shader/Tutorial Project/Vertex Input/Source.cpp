@@ -40,7 +40,7 @@ int main() {
 		lastTime = currentTime;
 
 		glfwPollEvents();
-		vulkanAPIHandler.updateUniformBuffer();
+		vulkanAPIHandler.updateUniformBuffers();
 		vulkanAPIHandler.update(deltaTime);
 		vulkanAPIHandler.drawFrame();
 	}

@@ -41,6 +41,10 @@ void Moveable::update(float deltaTime) {
 	}
 }
 
+CollisionRect Moveable::getCollisionRect() {
+	return collisionRect;
+}
+
 void Moveable::moveTowardsDirection(MoveableDirections direction) {
 	if (direction == MOVEABLE_DIR_UP) {
 		velocity.y = -movementSpeed;

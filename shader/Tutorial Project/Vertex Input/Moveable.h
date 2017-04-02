@@ -25,6 +25,8 @@ public:
 	~Moveable();
 
 	virtual void update(float deltaTime);
+
+	CollisionRect getCollisionRect();
 protected:
 	float movementSpeed{0.25f};
 	void moveTowardsDirection(MoveableDirections direction);

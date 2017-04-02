@@ -39,6 +39,8 @@ public:
 	virtual void update(float deltaTime);
 
 	int numIndices();
+	glm::vec3 getPosition();
+
 	void updateUniformBuffer(glm::mat4 projectionMatrix, glm::mat4 viewMatrix);
 
 	VkBuffer getVertexBuffer();
@@ -47,14 +49,14 @@ public:
 	VkDescriptorSetLayout getDescriptorLayout();
 
 	void createVertexIndexBuffers();
-	void createUniformBuffer();
+	void createUniformBuffers();
 	void createTextureImage();
 	void createTextureImageView();
 	void createTextureSampler();
 	void createDescriptorSetLayout();
 	void createDescriptorSet(VkDescriptorPool descriptorPool);
 protected:
-	Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos);
+	Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texturePath);
 
 	VulkanAPIHandler* vulkanAPIHandler;
 	

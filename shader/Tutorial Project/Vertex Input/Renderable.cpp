@@ -39,10 +39,11 @@ Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec3 renderableScale
 	loadModel(invertedNormals);
 }
 
-Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos) {
+Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath) {
 	vulkanAPIHandler = vkAPIHandler;
 	device = vkAPIHandler->getDevice();
 	position = pos;
+	texturePath = texPath;
 }
 
 Renderable::~Renderable() {	
@@ -103,8 +104,12 @@ void Renderable::createVertexIndexBuffers() {
 	vulkanAPIHandler->copyBuffer(indexStagingBuffer, indexBuffer, bufferSize);
 }
 
-void Renderable::createUniformBuffer() {
+void Renderable::createUniformBuffers() {
+	// NOTE: sizeof(RenderableUBO) will make the staging buffer work for both the UBO and Material since the material has a smaller size.
+	// Creating another staging buffer just for the material would be expensive, but the current way this is handled isn't exactly very clear.
+	// The current approach requires that the staging buffer is the same size as the current largest buffer struct for the class. 
 	vulkanAPIHandler->createBuffer(sizeof(RenderableUBO), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformStagingBuffer, uniformStagingBufferMemory);
+	
 	vulkanAPIHandler->createBuffer(sizeof(RenderableUBO), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, uniformBuffer, uniformBufferMemory);
 	vulkanAPIHandler->createBuffer(sizeof(RenderableMaterial), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, materialBuffer, materialBufferMemory);
 }
@@ -119,6 +124,10 @@ VkBuffer Renderable::getIndexBuffer() {
 
 int Renderable::numIndices() {
 	return indices.size();
+}
+
+glm::vec3 Renderable::getPosition() {
+	return position;
 }
 
 void Renderable::loadModel(bool invertNormals) {
@@ -358,6 +367,13 @@ void Renderable::createDescriptorSet(VkDescriptorPool descriptorPool) {
 	descriptorWrites[2].pBufferInfo = &materialInfo;
 
 	vkUpdateDescriptorSets(device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
+
+	// Static copying of the material data. This should be done if we dont want to update the material each frame
+	void* data;
+	vkMapMemory(device, uniformStagingBufferMemory, 0, sizeof(material), 0, &data);
+	memcpy(data, &material, sizeof(material));
+	vkUnmapMemory(device, uniformStagingBufferMemory);
+	vulkanAPIHandler->copyBuffer(uniformStagingBuffer, materialBuffer, sizeof(material));
 }
 
 void Renderable::update(float deltaTime) {
@@ -374,7 +390,7 @@ VkDescriptorSetLayout Renderable::getDescriptorLayout() {
 void Renderable::updateUniformBuffer(glm::mat4 projectionMatrix, glm::mat4 viewMatrix) {
 	RenderableUBO ubo = {};
 	
-	/*
+	/* // Making the renderable spin around the y axis
 	modelMatrix = 
 		glm::translate(glm::mat4(1.0f), position) * 
 		glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0, 1, 0)) * 
@@ -394,9 +410,11 @@ void Renderable::updateUniformBuffer(glm::mat4 projectionMatrix, glm::mat4 viewM
 	vkUnmapMemory(device, uniformStagingBufferMemory);
 	vulkanAPIHandler->copyBuffer(uniformStagingBuffer, uniformBuffer, sizeof(ubo));
 
-	// Updating Material
+	/*
+	// Updating Material dynamically
 	vkMapMemory(device, uniformStagingBufferMemory, 0, sizeof(material), 0, &data);
 	memcpy(data, &material, sizeof(material));
 	vkUnmapMemory(device, uniformStagingBufferMemory);
 	vulkanAPIHandler->copyBuffer(uniformStagingBuffer, materialBuffer, sizeof(material));
+	*/
 }

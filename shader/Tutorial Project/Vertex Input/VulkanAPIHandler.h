@@ -48,7 +48,7 @@ public:
 	VulkanAPIHandler(GLFWwindow* GLFWwindow);
 	~VulkanAPIHandler();
 	void drawFrame(); 
-	void updateUniformBuffer();
+	void updateUniformBuffers();
 	void update(float deltaTime);
 	static void onWindowResized(GLFWwindow* window, int width, int height);
 	VulkanAPIHandler* getPtr();

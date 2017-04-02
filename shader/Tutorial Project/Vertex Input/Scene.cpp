@@ -9,13 +9,13 @@ Scene::Scene(VulkanAPIHandler* vulkanAPI) {
 	sceneUBO.lightColors[0] = glm::vec4(1, 1, 1, 1);
 }
 
-std::vector<std::shared_ptr<Renderable>> Scene::getRenderableObjects() {
+std::vector<std::pair<RenderableTypes, std::shared_ptr<Renderable>>> Scene::getRenderableObjects() {
 	return renderableObjects;
 }
 
 void Scene::updateUniformBuffers(glm::mat4 projectionMatrix, glm::mat4 viewMatrix) {
 	for (auto& renderable : renderableObjects) {
-		renderable->updateUniformBuffer(projectionMatrix, viewMatrix);
+		renderable.second->updateUniformBuffer(projectionMatrix, viewMatrix);
 	}
 
 	void* data;
@@ -28,42 +28,58 @@ void Scene::updateUniformBuffers(glm::mat4 projectionMatrix, glm::mat4 viewMatri
 
 void Scene::update(float deltaTime) {
 	for (auto& renderable : renderableObjects) {
-		renderable->update(deltaTime);
+		renderable.second->update(deltaTime);
 	}
+
+	// For each ghost, check if it collides with pacman. There is probably a better way of doing this
+	for (auto& ghost : renderableObjects) {
+		if (ghost.first == RENDERABLE_GHOST) {
+			if (CollisionHandler::checkCollision(
+					std::dynamic_pointer_cast<Ghost>(ghost.second)->getCollisionRect(), 
+					std::dynamic_pointer_cast<Pacman>(renderableObjects[pacmanIndex].second)->getCollisionRect())) {
+				std::random_device rd;
+				std::mt19937 gen(rd());
+				std::uniform_int_distribution<> dis(0, 3);
+
+				std::dynamic_pointer_cast<Ghost>(ghost.second)->respawn(spawnPositions[dis(gen)]);
+			}
+		}
+	}
+
 }
 
 void Scene::handleInput(GLFWKeyEvent event) {
 	// Another alternative would be to just make handleInput virtual. Might be better if you want to control ghosts in some way too
-	std::dynamic_pointer_cast<Pacman>(renderableObjects[1])->handleInput(event);
+	std::dynamic_pointer_cast<Pacman>(renderableObjects[pacmanIndex].second)->handleInput(event);
 }
 
 void Scene::createTextureImages() {
 	for (auto& renderable : renderableObjects) {
-		renderable->createTextureImage();
+		renderable.second->createTextureImage();
 	}
 }
 
 void Scene::createTextureImageViews() {
 	for (auto& renderable : renderableObjects) {
-		renderable->createTextureImageView();
+		renderable.second->createTextureImageView();
 	}
 }
 
 void Scene::createTextureSamplers() {
 	for (auto& renderable : renderableObjects) {
-		renderable->createTextureSampler();
+		renderable.second->createTextureSampler();
 	}
 }
 
 void Scene::createVertexIndexBuffers() {
 	for (auto& renderable : renderableObjects) {
-		renderable->createVertexIndexBuffers();
+		renderable.second->createVertexIndexBuffers();
 	}
 }
 
 void Scene::createUniformBuffers() {
 	for (auto& renderable : renderableObjects) {
-		renderable->createUniformBuffer();
+		renderable.second->createUniformBuffers();
 	}
 
 	VkDeviceSize bufferSize = sizeof(SceneUBO);
@@ -74,7 +90,7 @@ void Scene::createUniformBuffers() {
 
 void Scene::createDescriptorSetLayouts() {
 	for (auto& renderable : renderableObjects) {
-		renderable->createDescriptorSetLayout();
+		renderable.second->createDescriptorSetLayout();
 	}
 	
 	VkDescriptorSetLayoutBinding uboLayoutBinding = {};
@@ -98,7 +114,7 @@ void Scene::createDescriptorSetLayouts() {
 
 void Scene::createDescriptorSets(VkDescriptorPool descPool) {
 	for (auto& renderable : renderableObjects) {
-		renderable->createDescriptorSet(descPool);
+		renderable.second->createDescriptorSet(descPool);
 	}
 	
 	// Creating the descriptor set for the scene UBO
@@ -134,47 +150,60 @@ void Scene::createDescriptorSets(VkDescriptorPool descPool) {
 
 void Scene::createRenderables() {
 	// This is where we initialise all of the renderables
-	renderableObjects.emplace_back(std::make_shared<RenderableMaze>(vulkanAPIHandler, glm::vec4(0, 0, 0, 1)));
+	renderableObjects.emplace_back(std::make_pair(RENDERABLE_MAZE, std::make_shared<RenderableMaze>(vulkanAPIHandler, glm::vec4(0, 0, 0, 1))));
 	
-	renderableObjects.emplace_back(std::make_shared<Pacman>(
-		std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[0]), 
-		vulkanAPIHandler, glm::vec4(350, 30, 400, 1), 
-		DEFAULT_TEXTURE_PATH, SPHERE_MODEL_PATH, 
-		glm::vec3(30, 30, 30), 
-		glm::vec4(1, 0, 1, 1)));
+	renderableObjects.emplace_back(
+		std::make_pair(RENDERABLE_PACMAN, 
+		std::make_shared<Pacman>(
+			std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[mazeIndex].second), 
+			vulkanAPIHandler, 
+			spawnPositions[0], 
+			DEFAULT_TEXTURE_PATH, 
+			SPHERE_MODEL_PATH, 
+			glm::vec3(30, 30, 30), 
+			glm::vec4(1, 1, 0, 1))));
 	
 	
-	renderableObjects.emplace_back(std::make_shared<Ghost>(
-		&sceneUBO, 
-		std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[0]), 
-		vulkanAPIHandler, 
-		1, 
-		glm::vec4(100, 50, 100, 1), 
-		glm::vec3(30, 30, 30), 
-		glm::vec4(1, 0, 0, 1)));
+	renderableObjects.emplace_back(
+		std::make_pair(RENDERABLE_GHOST, 
+		std::make_shared<Ghost>(
+			&sceneUBO, 
+			std::dynamic_pointer_cast<Pacman>(renderableObjects[pacmanIndex].second),
+			std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[mazeIndex].second), 
+			vulkanAPIHandler, 
+			1, 
+			spawnPositions[1], 
+			glm::vec3(30, 30, 30), 
+			glm::vec4(1, 0, 0, 1))));
 
-	renderableObjects.emplace_back(std::make_shared<Ghost>(
-		&sceneUBO,
-		std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[0]),
-		vulkanAPIHandler,
-		2,
-		glm::vec4(700, 50, 100, 1),
-		glm::vec3(30, 30, 30),
-		glm::vec4(0, 1, 0, 1)));
+	renderableObjects.emplace_back(
+		std::make_pair(RENDERABLE_GHOST, 
+		std::make_shared<Ghost>(
+			&sceneUBO,
+			std::dynamic_pointer_cast<Pacman>(renderableObjects[pacmanIndex].second),
+			std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[mazeIndex].second),
+			vulkanAPIHandler,
+			2,
+			spawnPositions[2],
+			glm::vec3(30, 30, 30),
+			glm::vec4(0, 1, 0, 1))));
 
-	renderableObjects.emplace_back(std::make_shared<Ghost>(
-		&sceneUBO,
-		std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[0]),
-		vulkanAPIHandler,
-		3,
-		glm::vec4(700, 50, 700, 1),
-		glm::vec3(30, 30, 30),
-		glm::vec4(0, 0, 1, 1)));
+	renderableObjects.emplace_back(
+		std::make_pair(RENDERABLE_GHOST, 
+		std::make_shared<Ghost>(
+			&sceneUBO,
+			std::dynamic_pointer_cast<Pacman>(renderableObjects[pacmanIndex].second),
+			std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[mazeIndex].second),
+			vulkanAPIHandler,
+			3,
+			spawnPositions[3],
+			glm::vec3(30, 30, 30),
+			glm::vec4(0, 0, 1, 1))));
 }
 
 VkDescriptorSetLayout Scene::getDescriptorSetLayout(DescriptorLayoutType type) {
 	if (type == DESC_LAYOUT_RENDERABLE) {
-		return renderableObjects[0]->getDescriptorLayout();
+		return renderableObjects[0].second->getDescriptorLayout();
 	} 
 	else if (type == DESC_LAYOUT_SCENE) {
 		return descriptorSetLayout;

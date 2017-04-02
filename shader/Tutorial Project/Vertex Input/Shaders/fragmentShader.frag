@@ -58,14 +58,7 @@ void main() {
 	vec4 materialAmbientColor;
 	vec4 materialSpecularColor;
 	
-	/*
-	// We might want these as part of a renderable's material
-	float specularExponent = 128.0;
-	float specularGain = 1;
-	float diffuseGain = 3; */
-	
-	// Light attenuation values. Might want to send these as tweakable uniforms for the sake of testing
-	float radius = 500;
+	float attenuationRadius = 500;
 	
 	outColor = vec4(0, 0, 0, 1); 
 	vec4 coloredTexture = texture(textureSampler, fragmentTextureCoordinate.xy) * fragmentColor;
@@ -89,7 +82,7 @@ void main() {
 		vec4 specularColor = calculateSpecularColor(materialSpecularColor, normal, lightDirection, renderableMaterial.specularExponent, lightColors[i]);
 		
 		// Light attenuation. Based on information from http://gamedev.stackexchange.com/questions/56897/glsl-light-attenuation-color-and-intensity-formula
-		float attenuation = pow(clamp(1.0 - dist*dist /(radius*radius), 0.0, 1.0), 2);
+		float attenuation = pow(clamp(1.0 - dist*dist /(attenuationRadius*attenuationRadius), 0.0, 1.0), 2);
 		outColor += materialAmbientColor + attenuation*(renderableMaterial.diffuseGain * diffuseColor + specularColor * renderableMaterial.specularGain); 
 	}
 }

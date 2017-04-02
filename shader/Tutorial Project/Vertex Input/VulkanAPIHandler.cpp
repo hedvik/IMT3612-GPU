@@ -51,7 +51,7 @@ void VulkanAPIHandler::drawFrame() {
 	vkQueuePresentKHR(presentationQueue, &presentInfo);
 }
 
-void VulkanAPIHandler::updateUniformBuffer() {
+void VulkanAPIHandler::updateUniformBuffers() {
 	glm::mat4 view = glm::lookAt(glm::vec3(400.f, 400.f, 950.f), glm::vec3(400.0f, -100.0f, 400.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 	glm::mat4 projection = glm::perspective(glm::radians(60.0f), swapChainExtent.width / (float)swapChainExtent.height, 1.5f, 1000.0f);
 	// We are flipping the y coordinate since GLM was originally made for OpenGL
@@ -734,14 +734,14 @@ void VulkanAPIHandler::createCommandBuffers() {
 		
 		VkDeviceSize offsets[] = { 0 };
 		for (auto& renderable : scene->getRenderableObjects()) {
-			VkBuffer currentVertexBuffer[] = { renderable->getVertexBuffer() };
-			VkDescriptorSet currentDescriptorSet = renderable->getDescriptorSet();
+			VkBuffer currentVertexBuffer[] = { renderable.second->getVertexBuffer() };
+			VkDescriptorSet currentDescriptorSet = renderable.second->getDescriptorSet();
 
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, currentVertexBuffer, offsets);
-			vkCmdBindIndexBuffer(commandBuffers[i], renderable->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+			vkCmdBindIndexBuffer(commandBuffers[i], renderable.second->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, RENDERABLE_UBO, 1, &currentDescriptorSet, 0, nullptr);
 
-			vkCmdDrawIndexed(commandBuffers[i], renderable->numIndices(), 1, 0, 0, 0);
+			vkCmdDrawIndexed(commandBuffers[i], renderable.second->numIndices(), 1, 0, 0, 0);
 		}
 
 		vkCmdEndRenderPass(commandBuffers[i]);
