@@ -6,6 +6,7 @@ Scene::Scene(VulkanAPIHandler* vulkanAPI) {
 	device = vulkanAPIHandler->getDevice();
 
 	sceneUBO.lightPositions[0] = glm::vec4(400, 100, 400, 1.0);
+	sceneUBO.lightColors[0] = glm::vec4(1, 1, 1, 1);
 }
 
 std::vector<std::shared_ptr<Renderable>> Scene::getRenderableObjects() {
@@ -32,6 +33,7 @@ void Scene::update(float deltaTime) {
 }
 
 void Scene::handleInput(GLFWKeyEvent event) {
+	// Another alternative would be to just make handleInput virtual. Might be better if you want to control ghosts in some way too
 	std::dynamic_pointer_cast<Pacman>(renderableObjects[1])->handleInput(event);
 }
 
@@ -132,9 +134,42 @@ void Scene::createDescriptorSets(VkDescriptorPool descPool) {
 
 void Scene::createRenderables() {
 	// This is where we initialise all of the renderables
-	renderableObjects.emplace_back(new RenderableMaze(vulkanAPIHandler, glm::vec4(0, 0, 0, 1), DEFAULT_TEXTURE_PATH));
-	renderableObjects.emplace_back(new Pacman(std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[0]), vulkanAPIHandler, glm::vec4(350, 50, 400, 1), DEFAULT_TEXTURE_PATH, SPHERE_MODEL_PATH, glm::vec3(30, 30, 30), glm::vec4(1, 0, 1, 1)));
-	renderableObjects.emplace_back(new Renderable(vulkanAPIHandler, glm::vec4(450, 50, 400, 1), COEURL_TEXTURE_PATH, CUBE_MODEL_PATH, glm::vec3(30, 30, 30)));
+	renderableObjects.emplace_back(std::make_shared<RenderableMaze>(vulkanAPIHandler, glm::vec4(0, 0, 0, 1)));
+	
+	renderableObjects.emplace_back(std::make_shared<Pacman>(
+		std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[0]), 
+		vulkanAPIHandler, glm::vec4(350, 30, 400, 1), 
+		DEFAULT_TEXTURE_PATH, SPHERE_MODEL_PATH, 
+		glm::vec3(30, 30, 30), 
+		glm::vec4(1, 0, 1, 1)));
+	
+	
+	renderableObjects.emplace_back(std::make_shared<Ghost>(
+		&sceneUBO, 
+		std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[0]), 
+		vulkanAPIHandler, 
+		1, 
+		glm::vec4(100, 50, 100, 1), 
+		glm::vec3(30, 30, 30), 
+		glm::vec4(1, 0, 0, 1)));
+
+	renderableObjects.emplace_back(std::make_shared<Ghost>(
+		&sceneUBO,
+		std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[0]),
+		vulkanAPIHandler,
+		2,
+		glm::vec4(700, 50, 100, 1),
+		glm::vec3(30, 30, 30),
+		glm::vec4(0, 1, 0, 1)));
+
+	renderableObjects.emplace_back(std::make_shared<Ghost>(
+		&sceneUBO,
+		std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[0]),
+		vulkanAPIHandler,
+		3,
+		glm::vec4(700, 50, 700, 1),
+		glm::vec3(30, 30, 30),
+		glm::vec4(0, 0, 1, 1)));
 }
 
 VkDescriptorSetLayout Scene::getDescriptorSetLayout(DescriptorLayoutType type) {
@@ -144,6 +179,9 @@ VkDescriptorSetLayout Scene::getDescriptorSetLayout(DescriptorLayoutType type) {
 	else if (type == DESC_LAYOUT_SCENE) {
 		return descriptorSetLayout;
 	} 
+	else {
+		return descriptorSetLayout;
+	}
 }
 
 VkDescriptorSet Scene::getDescriptorSet() {

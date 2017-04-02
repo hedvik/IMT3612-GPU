@@ -2,7 +2,7 @@
 
 
 
-RenderableMaze::RenderableMaze(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath) : Renderable(vkAPIHandler, pos, texPath) {
+RenderableMaze::RenderableMaze(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos) : Renderable(vkAPIHandler, pos) {
 	readSVGRects(FILE_PATH.c_str());
 	convertRectsToVertices();
 	addFloorVertices();

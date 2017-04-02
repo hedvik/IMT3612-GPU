@@ -3,7 +3,7 @@ const int WINDOW_WIDTH = 1280;
 const int WINDOW_HEIGHT = 720;
 const int NUM_VERTEX_ATTRIBUTES = 4;
 const int NUM_ATTACHMENTS = 2;
-const int NUM_LIGHTS = 1;
+const int NUM_LIGHTS = 4;
 
 // One for the scene and one for renderables
 const int NUM_DESCRIPTOR_SET_LAYOUTS = 2;

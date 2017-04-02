@@ -18,7 +18,7 @@ Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::strin
 	loadModel(invertedNormals);
 }
 
-Renderable::Renderable(VulkanAPIHandler * vkAPIHandler, glm::vec4 pos, std::string texPath, std::string meshPath, glm::vec3 renderableScale, glm::vec4 c, bool invertedNormals) {
+Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath, std::string meshPath, glm::vec3 renderableScale, glm::vec4 c, bool invertedNormals) {
 	vulkanAPIHandler = vkAPIHandler;
 	device = vkAPIHandler->getDevice();
 	texturePath = texPath;
@@ -30,10 +30,18 @@ Renderable::Renderable(VulkanAPIHandler * vkAPIHandler, glm::vec4 pos, std::stri
 	loadModel(invertedNormals);
 }
 
-Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath) {
+Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec3 renderableScale, glm::vec4 c, bool invertedNormals) {
 	vulkanAPIHandler = vkAPIHandler;
 	device = vkAPIHandler->getDevice();
-	texturePath = texPath;
+	scale = renderableScale;
+	baseColor = c;
+
+	loadModel(invertedNormals);
+}
+
+Renderable::Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos) {
+	vulkanAPIHandler = vkAPIHandler;
+	device = vkAPIHandler->getDevice();
 	position = pos;
 }
 
@@ -96,10 +104,9 @@ void Renderable::createVertexIndexBuffers() {
 }
 
 void Renderable::createUniformBuffer() {
-	VkDeviceSize bufferSize = sizeof(RenderableUBO);
-
-	vulkanAPIHandler->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformStagingBuffer, uniformStagingBufferMemory);
-	vulkanAPIHandler->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, uniformBuffer, uniformBufferMemory);
+	vulkanAPIHandler->createBuffer(sizeof(RenderableUBO), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformStagingBuffer, uniformStagingBufferMemory);
+	vulkanAPIHandler->createBuffer(sizeof(RenderableUBO), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, uniformBuffer, uniformBufferMemory);
+	vulkanAPIHandler->createBuffer(sizeof(RenderableMaterial), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, materialBuffer, materialBufferMemory);
 }
 
 VkBuffer Renderable::getVertexBuffer() {
@@ -272,16 +279,20 @@ void Renderable::createDescriptorSetLayout() {
 	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	uboLayoutBinding.descriptorCount = 1;
 	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-	uboLayoutBinding.pImmutableSamplers = nullptr; // Optional
 
 	VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
 	samplerLayoutBinding.binding = 1;
-	samplerLayoutBinding.descriptorCount = 1;
 	samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	samplerLayoutBinding.pImmutableSamplers = nullptr;
+	samplerLayoutBinding.descriptorCount = 1;
 	samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-	std::array<VkDescriptorSetLayoutBinding, 2> bindings = { uboLayoutBinding, samplerLayoutBinding };
+	VkDescriptorSetLayoutBinding materialLayoutBinding = {};
+	materialLayoutBinding.binding = 2;
+	materialLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	materialLayoutBinding.descriptorCount = 1;
+	materialLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	std::array<VkDescriptorSetLayoutBinding, 3> bindings = { uboLayoutBinding, samplerLayoutBinding, materialLayoutBinding };
 	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	layoutInfo.bindingCount = bindings.size();
@@ -315,7 +326,12 @@ void Renderable::createDescriptorSet(VkDescriptorPool descriptorPool) {
 	imageInfo.imageView = textureImageView;
 	imageInfo.sampler = textureSampler;
 
-	std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
+	VkDescriptorBufferInfo materialInfo = {};
+	materialInfo.buffer = materialBuffer;
+	materialInfo.offset = 0;
+	materialInfo.range = sizeof(RenderableMaterial);
+
+	std::array<VkWriteDescriptorSet, 3> descriptorWrites = {};
 
 	descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	descriptorWrites[0].dstSet = descriptorSet;
@@ -332,6 +348,14 @@ void Renderable::createDescriptorSet(VkDescriptorPool descriptorPool) {
 	descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	descriptorWrites[1].descriptorCount = 1;
 	descriptorWrites[1].pImageInfo = &imageInfo;
+
+	descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[2].dstSet = descriptorSet;
+	descriptorWrites[2].dstBinding = 2;
+	descriptorWrites[2].dstArrayElement = 0;
+	descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	descriptorWrites[2].descriptorCount = 1;
+	descriptorWrites[2].pBufferInfo = &materialInfo;
 
 	vkUpdateDescriptorSets(device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
 }
@@ -363,10 +387,16 @@ void Renderable::updateUniformBuffer(glm::mat4 projectionMatrix, glm::mat4 viewM
 	ubo.viewMatrix = viewMatrix;
 	ubo.modelMatrix = modelMatrix;
 
+	// Updating UBO
 	void* data;
 	vkMapMemory(device, uniformStagingBufferMemory, 0, sizeof(ubo), 0, &data);
 	memcpy(data, &ubo, sizeof(ubo));
 	vkUnmapMemory(device, uniformStagingBufferMemory);
-
 	vulkanAPIHandler->copyBuffer(uniformStagingBuffer, uniformBuffer, sizeof(ubo));
+
+	// Updating Material
+	vkMapMemory(device, uniformStagingBufferMemory, 0, sizeof(material), 0, &data);
+	memcpy(data, &material, sizeof(material));
+	vkUnmapMemory(device, uniformStagingBufferMemory);
+	vulkanAPIHandler->copyBuffer(uniformStagingBuffer, materialBuffer, sizeof(material));
 }

@@ -761,12 +761,17 @@ void VulkanAPIHandler::createUniformBuffers() {
 }
 
 void VulkanAPIHandler::createDescriptorPool() {
-	std::array<VkDescriptorPoolSize, 2> poolSizes = {};
-	poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	std::array<VkDescriptorPoolSize, 3> poolSizes = {};
+	
 	// Each object has a uniform buffer + the scene has one too
+	poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	poolSizes[0].descriptorCount = scene->getRenderableObjects().size() + 1;
+	
 	poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	poolSizes[1].descriptorCount = scene->getRenderableObjects().size();
+	
+	poolSizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSizes[2].descriptorCount = scene->getRenderableObjects().size();
 
 	VkDescriptorPoolCreateInfo poolInfo = {};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;

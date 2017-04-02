@@ -6,6 +6,7 @@
 #include "RenderableMaze.h"
 #include "Moveable.h"
 #include "Pacman.h"
+#include "Ghost.h"
 
 class VulkanAPIHandler;
 

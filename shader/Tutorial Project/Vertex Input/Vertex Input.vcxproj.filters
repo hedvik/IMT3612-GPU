@@ -45,6 +45,9 @@
     <ClCompile Include="Pacman.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Ghost.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="consts.h">
@@ -84,6 +87,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Pacman.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Ghost.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

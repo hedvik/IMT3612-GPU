@@ -2,23 +2,31 @@
 #extension GL_ARB_separate_shader_objects : enable
 #define RENDERABLE_UBO		0
 #define SCENE_UBO					1
-#define NUM_LIGHTS                1
+#define BINDING_SAMPLER       1
+#define BINDING_MATERIAL      2
+#define NUM_LIGHTS                4
 
-layout(set = RENDERABLE_UBO, binding = 1) uniform sampler2D textureSampler;
+layout(set = RENDERABLE_UBO, binding = BINDING_SAMPLER) uniform sampler2D textureSampler;
+layout(set = RENDERABLE_UBO, binding = BINDING_MATERIAL) uniform RenderableMaterial {
+	float specularExponent;
+	float specularGain;
+	float diffuseGain;
+} renderableMaterial;
 
 layout(location = 0) in vec4 vertexPosition_cameraspace;
 layout(location = 1) in vec4 fragmentColor;
 layout(location = 2) in vec4 fragmentTextureCoordinate;
 layout(location = 3) in vec4 normal_cameraspace;
 layout(location = 4) in vec4 lightPositions_cameraspace[NUM_LIGHTS];
+layout(location = 10) in vec4 lightColors[NUM_LIGHTS];
 
 layout(location = 0) out vec4 outColor;
 
 // The color white
-const vec4 WHITE = vec4( 1.0, 1.0, 1.0, 1.0 );
+const vec4 WHITE = vec4(1.0, 1.0, 1.0, 1.0);
 
 // Default material for everything. Might want this as a part of the RenderableUBO
-const float ambientComponent = 0.25f;
+const float ambientComponent = 0.05f;
 const float diffuseComponent = 0.5f;
 const vec4 specularComponent = WHITE;
 
@@ -50,16 +58,14 @@ void main() {
 	vec4 materialAmbientColor;
 	vec4 materialSpecularColor;
 	
+	/*
 	// We might want these as part of a renderable's material
 	float specularExponent = 128.0;
 	float specularGain = 1;
-	float diffuseGain = 1;
+	float diffuseGain = 3; */
 	
 	// Light attenuation values. Might want to send these as tweakable uniforms for the sake of testing
-	float k0 = 0.01;
-	float k1;
-	float minimumLight = 500;
-	float radius = 300;
+	float radius = 500;
 	
 	outColor = vec4(0, 0, 0, 1); 
 	vec4 coloredTexture = texture(textureSampler, fragmentTextureCoordinate.xy) * fragmentColor;
@@ -79,13 +85,12 @@ void main() {
 		// Distance between light and fragment
 		float dist = length(lightDirection);
 		lightDirection = normalize(lightDirection);
-		vec4 diffuseColor = calculateDiffuseColor(materialDiffuseColor, normal, lightDirection, WHITE);
-		vec4 specularColor = calculateSpecularColor(materialSpecularColor, normal, lightDirection, specularExponent, WHITE);
+		vec4 diffuseColor = calculateDiffuseColor(materialDiffuseColor, normal, lightDirection, lightColors[i]);
+		vec4 specularColor = calculateSpecularColor(materialSpecularColor, normal, lightDirection, renderableMaterial.specularExponent, lightColors[i]);
 		
 		// Light attenuation. Based on information from http://gamedev.stackexchange.com/questions/56897/glsl-light-attenuation-color-and-intensity-formula
-		k1 = 1.0 / (pow(radius, 2) * minimumLight);
-		float attenuation = 1.0 / (1.0 + k0 * dist + k1 * pow(dist, 2));
-		outColor += materialAmbientColor + attenuation*(diffuseGain * diffuseColor + specularColor * specularGain); 
+		float attenuation = pow(clamp(1.0 - dist*dist /(radius*radius), 0.0, 1.0), 2);
+		outColor += materialAmbientColor + attenuation*(renderableMaterial.diffuseGain * diffuseColor + specularColor * renderableMaterial.specularGain); 
 	}
 }
 

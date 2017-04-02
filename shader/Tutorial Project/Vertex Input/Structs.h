@@ -13,8 +13,15 @@ struct RenderableUBO {
 	glm::mat4 modelMatrix;
 };
 
+struct RenderableMaterial {
+	float specularExponent{128.0};
+	float specularGain{1};
+	float diffuseGain{1};
+};
+
 struct SceneUBO {
 	glm::vec4 lightPositions[NUM_LIGHTS];
+	glm::vec4 lightColors[NUM_LIGHTS];
 };
 
 struct Vertex {

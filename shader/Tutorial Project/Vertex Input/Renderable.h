@@ -27,9 +27,16 @@ public:
 		std::string texPath,
 		std::string meshPath,
 		glm::vec3 renderableScale,
-		glm::vec4 c = glm::vec4(1.f, 1.f, 1.f, 1.f),
+		glm::vec4 c,
+		bool invertedNormals = false);
+	Renderable(
+		VulkanAPIHandler* vkAPIHandler,
+		glm::vec3 renderableScale,
+		glm::vec4 c,
 		bool invertedNormals = false);
 	~Renderable();
+
+	virtual void update(float deltaTime);
 
 	int numIndices();
 	void updateUniformBuffer(glm::mat4 projectionMatrix, glm::mat4 viewMatrix);
@@ -46,23 +53,26 @@ public:
 	void createTextureSampler();
 	void createDescriptorSetLayout();
 	void createDescriptorSet(VkDescriptorPool descriptorPool);
-	virtual void update(float deltaTime);
 protected:
-	Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath);
+	Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos);
 
 	VulkanAPIHandler* vulkanAPIHandler;
-	glm::vec3 position{0.f, 0.f, 0.f};
-	glm::vec3 scale{1.f, 1.f, 1.f};
+	
 	std::vector<Vertex> vertices{};
 	std::vector<uint32_t> indices{};
 	glm::mat4 modelMatrix{1.f};
+	
+	glm::vec3 position{0.f, 0.f, 0.f};
+	glm::vec3 scale{1.f, 1.f, 1.f};
 	glm::vec4 baseColor{1.f, 1.f, 1.f, 1.f};
+
+	RenderableMaterial material{};
 private:
 	VDeleter<VkDevice> device;
 	VkDescriptorSet descriptorSet;
 
-	std::string texturePath{};
-	std::string modelPath{};
+	std::string texturePath{DEFAULT_TEXTURE_PATH};
+	std::string modelPath{CUBE_MODEL_PATH};
 
 	VDeleter<VkDescriptorSetLayout> descriptorSetLayout{ device, vkDestroyDescriptorSetLayout };
 
@@ -78,8 +88,12 @@ private:
 	
 	VDeleter<VkBuffer> uniformStagingBuffer{ device, vkDestroyBuffer };
 	VDeleter<VkDeviceMemory> uniformStagingBufferMemory{ device, vkFreeMemory };
+	
 	VDeleter<VkBuffer> uniformBuffer{ device, vkDestroyBuffer };
 	VDeleter<VkDeviceMemory> uniformBufferMemory{ device, vkFreeMemory };
+
+	VDeleter<VkBuffer> materialBuffer{ device, vkDestroyBuffer };
+	VDeleter<VkDeviceMemory> materialBufferMemory{ device, vkFreeMemory };
 
 	void loadModel(bool invertNormals);
 };

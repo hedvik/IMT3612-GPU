@@ -2,16 +2,17 @@
 #include "VulkanAPIHandler.h"
 
 Pacman::Pacman(
-	std::shared_ptr<RenderableMaze> ptr, 
-	VulkanAPIHandler* vkAPIHandler, 
-	glm::vec4 pos, 
-	std::string texPath, 
-	std::string meshPath, 
-	glm::vec3 renderableScale, 
-	glm::vec4 c, 
-	bool invertedNormals) : Moveable(ptr, vkAPIHandler, pos, texPath, meshPath, renderableScale, c, invertedNormals) {
+		std::shared_ptr<RenderableMaze> ptr, 
+		VulkanAPIHandler* vkAPIHandler, 
+		glm::vec4 pos, 
+		std::string texPath, 
+		std::string meshPath, 
+		glm::vec3 renderableScale, 
+		glm::vec4 c, 
+		bool invertedNormals) : Moveable(ptr, vkAPIHandler, pos, texPath, meshPath, renderableScale, c, invertedNormals) {
 }
 
+// based on https://www.libsdl.org/release/SDL-1.2.15/docs/html/guideinputkeyboard.html
 void Pacman::handleInput(GLFWKeyEvent event) {
 	if (event.action == GLFW_PRESS) {
 		switch (event.key) {
@@ -34,20 +35,24 @@ void Pacman::handleInput(GLFWKeyEvent event) {
 	else if (event.action == GLFW_RELEASE) {
 		switch (event.key) {
 		case GLFW_KEY_W:
-			if (velocity.y < 0)
+			if (velocity.y < 0) {
 				velocity.y = 0;
+			}
 			break;
 		case GLFW_KEY_A:
-			if (velocity.x < 0)
+			if (velocity.x < 0) {
 				velocity.x = 0;
+			}
 			break;
 		case GLFW_KEY_S:
-			if (velocity.y > 0)
+			if (velocity.y > 0) {
 				velocity.y = 0;
+			}
 			break;
 		case GLFW_KEY_D:
-			if (velocity.x > 0)
+			if (velocity.x > 0) {
 				velocity.x = 0;
+			}
 			break;
 		default:
 			break;

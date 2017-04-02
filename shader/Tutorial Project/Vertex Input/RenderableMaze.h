@@ -5,7 +5,7 @@
 
 class RenderableMaze : public Renderable {
 public:
-	RenderableMaze(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texPath);
+	RenderableMaze(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos);
 	~RenderableMaze();
 	std::vector<CollisionRect> getWalls();
 private:
