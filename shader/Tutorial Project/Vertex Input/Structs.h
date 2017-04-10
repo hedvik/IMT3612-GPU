@@ -13,7 +13,7 @@ struct RenderableUBO {
 	glm::mat4 modelMatrix;
 };
 
-struct RenderableMaterial {
+struct RenderableMaterialUBO {
 	float specularExponent{128.0};
 	float specularGain{1};
 	float diffuseGain{1};
@@ -69,6 +69,25 @@ struct Vertex {
 	bool operator==(const Vertex& other) const {
 		return position == other.position && color == other.color && texCoord == other.texCoord && normal == other.normal;
 	}
+};
+
+// OffscreenPass and FrameBufferAttachment are used for shadow mapping
+struct FrameBufferAttachment {
+	VkImage image;
+	VkDeviceMemory memory;
+	VkImageView view;
+};
+
+struct OffscreenPass {
+	int32_t width, height;
+	VkFramebuffer frameBuffer;
+	FrameBufferAttachment color, depth;
+	VkRenderPass renderPass;
+	VkSampler sampler;
+	VkDescriptorImageInfo descriptor;
+	VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+	// Semaphore used to synchronize between offscreen and final scene render pass
+	VkSemaphore semaphore = VK_NULL_HANDLE;
 };
 
 struct CollisionRect{

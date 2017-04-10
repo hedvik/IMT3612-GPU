@@ -2,15 +2,14 @@
 
 
 
-Moveable::Moveable(
-		std::shared_ptr<RenderableMaze> ptr, 
-		VulkanAPIHandler* vkAPIHandler, 
-		glm::vec4 pos, 
-		std::string texPath, 
-		std::string meshPath, 
-		glm::vec3 renderableScale, 
-		glm::vec4 c, 
-		bool invertedNormals) : Renderable(vkAPIHandler, pos, texPath, meshPath, renderableScale, c, invertedNormals) {
+Moveable::Moveable(std::shared_ptr<RenderableMaze> ptr, 
+				   VulkanAPIHandler* vkAPIHandler, 
+				   glm::vec4 pos, 
+				   std::string texPath, 
+				   std::string meshPath, 
+				   glm::vec3 renderableScale, 
+				   glm::vec4 c, 
+				   bool invertedNormals) : Renderable(vkAPIHandler, pos, texPath, meshPath, renderableScale, c, invertedNormals) {
 	mazePtr = ptr;
 	setupCollider();
 }

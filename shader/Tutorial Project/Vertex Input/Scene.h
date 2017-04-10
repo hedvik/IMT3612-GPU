@@ -1,6 +1,7 @@
 #pragma once
 #include <memory>
 #include <vector>
+#include <random>
 #include <glm\glm.hpp>
 #include "Renderable.h"
 #include "RenderableMaze.h"
@@ -24,7 +25,8 @@ enum RenderableTypes {
 class Scene {
 public:
 	Scene(VulkanAPIHandler* vulkanAPI);
-	
+	~Scene();
+
 	void updateUniformBuffers(glm::mat4 projectionMatrix, glm::mat4 viewMatrix);
 	void update(float deltaTime);
 	void handleInput(GLFWKeyEvent event);
@@ -37,6 +39,9 @@ public:
 	void createDescriptorSetLayouts();
 	void createDescriptorSets(VkDescriptorPool descPool);
 	void createRenderables();
+	void prepareCubeMaps();
+	void prepareOffscreenFramebuffer();
+	void updateCubeFace(uint32_t faceIndex);
 	
 	std::vector<std::pair<RenderableTypes, std::shared_ptr<Renderable>>> getRenderableObjects();
 	VkDescriptorSetLayout getDescriptorSetLayout(DescriptorLayoutType type);
@@ -44,25 +49,42 @@ public:
 private:
 	VulkanAPIHandler* vulkanAPIHandler;
 	VkDescriptorSet descriptorSet;
+	VkDescriptorSet offscreenDescriptorSet;
 
 	std::vector<std::pair<RenderableTypes, std::shared_ptr<Renderable>>> renderableObjects{};
 	SceneUBO sceneUBO;
 
+	OffscreenPass offscreenPass;
+	VkFormat frameBufferDepthFormat;
+
 	VDeleter<VkDevice> device;
 	VDeleter<VkDescriptorSetLayout> descriptorSetLayout{ device, vkDestroyDescriptorSetLayout };
+	VDeleter<VkDescriptorSetLayout> offscreenDescriptorSetLayout{ device, vkDestroyDescriptorSetLayout };
+
+	// TODO: Might end up giving one of these to each ghost as well
+	VDeleter<VkImage> shadowCubeMapImage{ device , vkDestroyImage };
+	VDeleter<VkImageView> shadowCubeMapImageView{ device, vkDestroyImageView };
+	VDeleter<VkSampler> shadowCubeMapSampler{ device, vkDestroySampler };
+	VDeleter<VkDeviceMemory> shadowCubeMapMemory{ device, vkFreeMemory };
 
 	VDeleter<VkBuffer> uniformStagingBuffer{ device, vkDestroyBuffer };
 	VDeleter<VkDeviceMemory> uniformStagingBufferMemory{ device, vkFreeMemory };
 	VDeleter<VkBuffer> uniformBuffer{ device, vkDestroyBuffer };
 	VDeleter<VkDeviceMemory> uniformBufferMemory{ device, vkFreeMemory };
 
+	VDeleter<VkBuffer> offscreenUniformBuffer{ device, vkDestroyBuffer };
+	VDeleter<VkDeviceMemory> offScreenUniformBufferMemory{ device, vkFreeMemory };
+
+	VDeleter<VkPipelineLayout> offscreenPipelineLayout{ device, vkDestroyPipelineLayout };
+	VDeleter<VkPipeline> offscreenPipeline{ device, vkDestroyPipeline };
+
 	int mazeIndex{0};
 	int pacmanIndex{1};
-	std::vector<glm::vec4> spawnPositions{
-		glm::vec4(350, 30, 400, 1),
-		glm::vec4(100, 50, 100, 1),
-		glm::vec4(700, 50, 100, 1),
-		glm::vec4(700, 50, 700, 1)
+
+	std::vector<glm::vec4> spawnPositions {
+		glm::vec4(350.f, 30.f, 400.f, 1.f),
+		glm::vec4(100.f, 30.f, 100.f, 1.f),
+		glm::vec4(700.f, 30.f, 100.f, 1.f),
+		glm::vec4(700.f, 30.f, 700.f, 1.f)
 	};
 };
-

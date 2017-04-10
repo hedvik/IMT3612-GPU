@@ -15,25 +15,22 @@ class VulkanAPIHandler;
 class Renderable {
 public:
 	Renderable();
-	Renderable(
-		VulkanAPIHandler* vkAPIHandler, 
-		glm::vec4 pos, 
-		std::string texPath, 
-		std::string meshPath, 
-		bool invertedNormals = false);
-	Renderable(
-		VulkanAPIHandler* vkAPIHandler,
-		glm::vec4 pos,
-		std::string texPath,
-		std::string meshPath,
-		glm::vec3 renderableScale,
-		glm::vec4 c,
-		bool invertedNormals = false);
-	Renderable(
-		VulkanAPIHandler* vkAPIHandler,
-		glm::vec3 renderableScale,
-		glm::vec4 c,
-		bool invertedNormals = false);
+	Renderable(VulkanAPIHandler* vkAPIHandler, 
+			   glm::vec4 pos, 
+			   std::string texPath, 
+			   std::string meshPath, 
+			   bool invertedNormals = false);
+	Renderable(VulkanAPIHandler* vkAPIHandler,
+			   glm::vec4 pos,
+			   std::string texPath,
+			   std::string meshPath,
+			   glm::vec3 renderableScale,
+			   glm::vec4 c,
+			   bool invertedNormals = false);
+	Renderable(VulkanAPIHandler* vkAPIHandler,
+			   glm::vec3 renderableScale,
+			   glm::vec4 c,
+			   bool invertedNormals = false);
 	~Renderable();
 
 	virtual void update(float deltaTime);
@@ -68,7 +65,7 @@ protected:
 	glm::vec3 scale{1.f, 1.f, 1.f};
 	glm::vec4 baseColor{1.f, 1.f, 1.f, 1.f};
 
-	RenderableMaterial material{};
+	RenderableMaterialUBO material{};
 private:
 	VDeleter<VkDevice> device;
 	VkDescriptorSet descriptorSet;

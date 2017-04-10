@@ -1,20 +1,19 @@
 #include "Ghost.h"
 
-Ghost::Ghost(
-		SceneUBO* uboPtr,
-		std::shared_ptr<Pacman> pacPtr,
-		std::shared_ptr<RenderableMaze> mazePtr, 
-		VulkanAPIHandler* vkAPIHandler, 
-		int lightIndex, 
-		glm::vec4 pos, 
-		glm::vec3 renderableScale, 
-		glm::vec4 c) : Moveable(mazePtr, vkAPIHandler, pos, DEFAULT_TEXTURE_PATH, CUBE_MODEL_PATH, renderableScale, c, true) {
+Ghost::Ghost(SceneUBO* uboPtr,
+			 std::shared_ptr<Pacman> pacPtr,
+			 std::shared_ptr<RenderableMaze> mazePtr, 
+			 VulkanAPIHandler* vkAPIHandler, 
+			 int lightIndex, 
+			 glm::vec4 pos, 
+			 glm::vec3 renderableScale, 
+			 glm::vec4 c) : Moveable(mazePtr, vkAPIHandler, pos, DEFAULT_TEXTURE_PATH, CUBE_MODEL_PATH, renderableScale, c, true) {
 	sceneUBOLightIndex = lightIndex;
 	sceneUBOPtr = uboPtr;
 	pacmanPtr = pacPtr;
-
 	sceneUBOPtr->lightColors[sceneUBOLightIndex] = c;
 	material.diffuseGain = 5;
+	movementSpeed *= 0.75f;
 }
 
 Ghost::~Ghost() {
@@ -25,10 +24,11 @@ void Ghost::update(float dt) {
 
 	interpolationTimer += INTERPOLATION_SPEED * dt;
 	
-	// delta time is measured in milliseconds
+	// Delta time is measured in milliseconds and we want to use the timer with seconds
 	movementDecisionTimer += dt / 1000.f;
 
-	position.y = baseY * pow(cos(interpolationTimer), 2) + (offsetY) * pow(sin(interpolationTimer), 2);
+	// Smoothly interpolating the y position of the ghost, making it float up and down
+	position.y = Utilities::smoothInterpolation(BASE_Y_POSITION, OFFSET_Y_POSITION, interpolationTimer);
 	sceneUBOPtr->lightPositions[sceneUBOLightIndex] = glm::vec4(position, 1);
 
 	if (movementDecisionTimer >= MOVEMENT_DECISION_FREQUENCY) {
@@ -56,7 +56,7 @@ void Ghost::ghostMovement() {
 			chooseDirection(MOVEABLE_DIR_UP, MOVEABLE_DIR_LEFT);
 		}
 
-		// if pacman is right above/below/to the right or left, flees in the opposite direction
+		// If pacman is right above/below/to the right or left, flees in the opposite direction
 		else if (pacmanPosition.x < position.x && pacmanPosition.z == position.z) {
 			moveTowardsDirection(MOVEABLE_DIR_RIGHT);
 		}

@@ -13,15 +13,14 @@ enum MoveableDirections {
 
 class Moveable : public Renderable {
 public:
-	Moveable(
-		std::shared_ptr<RenderableMaze> ptr,
-		VulkanAPIHandler* vkAPIHandler,
-		glm::vec4 pos,
-		std::string texPath,
-		std::string meshPath,
-		glm::vec3 renderableScale,
-		glm::vec4 c = glm::vec4(1.f, 1.f, 1.f, 1.f),
-		bool invertedNormals = false);
+	Moveable(std::shared_ptr<RenderableMaze> ptr,
+			 VulkanAPIHandler* vkAPIHandler,
+			 glm::vec4 pos,
+			 std::string texPath,
+			 std::string meshPath,
+			 glm::vec3 renderableScale,
+			 glm::vec4 c = glm::vec4(1.f, 1.f, 1.f, 1.f),
+			 bool invertedNormals = false);
 	~Moveable();
 
 	virtual void update(float deltaTime);

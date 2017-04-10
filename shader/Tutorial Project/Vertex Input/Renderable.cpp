@@ -111,7 +111,7 @@ void Renderable::createUniformBuffers() {
 	vulkanAPIHandler->createBuffer(sizeof(RenderableUBO), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformStagingBuffer, uniformStagingBufferMemory);
 	
 	vulkanAPIHandler->createBuffer(sizeof(RenderableUBO), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, uniformBuffer, uniformBufferMemory);
-	vulkanAPIHandler->createBuffer(sizeof(RenderableMaterial), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, materialBuffer, materialBufferMemory);
+	vulkanAPIHandler->createBuffer(sizeof(RenderableMaterialUBO), VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, materialBuffer, materialBufferMemory);
 }
 
 VkBuffer Renderable::getVertexBuffer() {
@@ -338,7 +338,7 @@ void Renderable::createDescriptorSet(VkDescriptorPool descriptorPool) {
 	VkDescriptorBufferInfo materialInfo = {};
 	materialInfo.buffer = materialBuffer;
 	materialInfo.offset = 0;
-	materialInfo.range = sizeof(RenderableMaterial);
+	materialInfo.range = sizeof(RenderableMaterialUBO);
 
 	std::array<VkWriteDescriptorSet, 3> descriptorWrites = {};
 

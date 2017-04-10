@@ -1,18 +1,15 @@
 #include "Pacman.h"
 #include "VulkanAPIHandler.h"
 
-Pacman::Pacman(
-		std::shared_ptr<RenderableMaze> ptr, 
-		VulkanAPIHandler* vkAPIHandler, 
-		glm::vec4 pos, 
-		std::string texPath, 
-		std::string meshPath, 
-		glm::vec3 renderableScale, 
-		glm::vec4 c, 
-		bool invertedNormals) : Moveable(ptr, vkAPIHandler, pos, texPath, meshPath, renderableScale, c, invertedNormals) {
+Pacman::Pacman(std::shared_ptr<RenderableMaze> ptr, 
+			   VulkanAPIHandler* vkAPIHandler, 
+			   glm::vec4 pos, 
+			   glm::vec3 renderableScale, 
+			   glm::vec4 c) : Moveable(ptr, vkAPIHandler, pos, DEFAULT_TEXTURE_PATH, SPHERE_MODEL_PATH, renderableScale, c, false) {
+	// Empty at the moment
 }
 
-// based on https://www.libsdl.org/release/SDL-1.2.15/docs/html/guideinputkeyboard.html
+// Based on https://www.libsdl.org/release/SDL-1.2.15/docs/html/guideinputkeyboard.html
 void Pacman::handleInput(GLFWKeyEvent event) {
 	if (event.action == GLFW_PRESS) {
 		switch (event.key) {

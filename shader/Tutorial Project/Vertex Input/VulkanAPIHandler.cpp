@@ -81,6 +81,10 @@ VkDevice VulkanAPIHandler::getDevice() {
 	return device;
 }
 
+VkCommandPool VulkanAPIHandler::getCommandPool() {
+	return commandPool;
+}
+
 void VulkanAPIHandler::handleInput(GLFWKeyEvent event) {
 	scene->handleInput(event);
 }
@@ -671,6 +675,7 @@ void VulkanAPIHandler::createDepthResources() {
 	createImage(swapChainExtent.width, swapChainExtent.height, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage, depthImageMemory);
 	createImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, depthImageView);
 
+	
 	transitionImageLayout(depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 }
 
@@ -702,6 +707,8 @@ void VulkanAPIHandler::createCommandBuffers() {
 	if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
 		throw std::runtime_error("failed to allocate command buffers!");
 	}
+
+
 
 	for (size_t i = 0; i < commandBuffers.size(); i++) {
 		VkCommandBufferBeginInfo beginInfo = {};
@@ -855,7 +862,7 @@ void VulkanAPIHandler::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
 	vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
-void VulkanAPIHandler::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout) {
+void VulkanAPIHandler::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, int subResouceLayerCount) {
 	VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
 	VkImageMemoryBarrier barrier = {};
@@ -870,18 +877,7 @@ void VulkanAPIHandler::transitionImageLayout(VkImage image, VkFormat format, VkI
 	barrier.subresourceRange.baseMipLevel = 0;
 	barrier.subresourceRange.levelCount = 1;
 	barrier.subresourceRange.baseArrayLayer = 0;
-	barrier.subresourceRange.layerCount = 1;
-	
-	if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-
-		if (hasStencilComponent(format)) {
-			barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-		}
-	}
-	else {
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	}
+	barrier.subresourceRange.layerCount = subResouceLayerCount;
 
 	if (oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
 		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
@@ -899,10 +895,39 @@ void VulkanAPIHandler::transitionImageLayout(VkImage image, VkFormat format, VkI
 		barrier.srcAccessMask = 0;
 		barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+		barrier.srcAccessMask = 0;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+		// DO STUFF
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&  newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+		// DO STUFF
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+		// DO STUFF
+	}
 	else {
 		throw std::invalid_argument("unsupported layout transition!");
 	}
 	
+	if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+		if (hasStencilComponent(format)) {
+			barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+		}
+	}
+	else if (newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+		if (barrier.srcAccessMask == 0) {
+			barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+		}
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	}
+	else {
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	}
+
 	vkCmdPipelineBarrier(
 		commandBuffer,
 		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
@@ -1121,14 +1146,13 @@ void VulkanAPIHandler::copyImage(VkImage srcImage, VkImage dstImage, uint32_t wi
 	endSingleTimeCommands(commandBuffer);
 }
 
-void VulkanAPIHandler::createImage(
-	uint32_t width, uint32_t height, 
-	VkFormat format, 
-	VkImageTiling tiling, 
-	VkImageUsageFlags usage, 
-	VkMemoryPropertyFlags properties, 
-	VDeleter<VkImage>& image, 
-	VDeleter<VkDeviceMemory>& imageMemory) {
+void VulkanAPIHandler::createImage(uint32_t width, uint32_t height, 
+								   VkFormat format, 
+								   VkImageTiling tiling, 
+								   VkImageUsageFlags usage, 
+								   VkMemoryPropertyFlags properties, 
+								   VDeleter<VkImage>& image, 
+								   VDeleter<VkDeviceMemory>& imageMemory) {
 	VkImageCreateInfo imageInfo = {};
 	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -1189,7 +1213,7 @@ VkPresentModeKHR VulkanAPIHandler::chooseSwapPresentMode(const std::vector<VkPre
 	return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D VulkanAPIHandler::chooseSwapExtent(const VkSurfaceCapabilitiesKHR & capabilities) {
+VkExtent2D VulkanAPIHandler::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
 	if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
 		return capabilities.currentExtent;
 	}
@@ -1209,18 +1233,18 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanAPIHandler::debugCallback(
 	uint64_t obj, 
 	size_t location,
 	int32_t code, 
-	const char * layerPrefix, 
-	const char * msg, 
-	void * userData) {
+	const char* layerPrefix, 
+	const char* msg, 
+	void* userData) {
 	std::cerr << "validation layer: " << msg << std::endl;
 
 	return VK_FALSE;
 }
 
 VkResult VulkanAPIHandler::CreateDebugReportCallbackEXT(VkInstance instance, 
-	const VkDebugReportCallbackCreateInfoEXT * pCreateInfo, 
-	const VkAllocationCallbacks * pAllocator, 
-	VkDebugReportCallbackEXT * pCallback) {
+	const VkDebugReportCallbackCreateInfoEXT* pCreateInfo, 
+	const VkAllocationCallbacks* pAllocator, 
+	VkDebugReportCallbackEXT* pCallback) {
 	auto func = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugReportCallbackEXT");
 	if (func != nullptr) {
 		return func(instance, pCreateInfo, pAllocator, pCallback);
@@ -1233,7 +1257,7 @@ VkResult VulkanAPIHandler::CreateDebugReportCallbackEXT(VkInstance instance,
 void VulkanAPIHandler::DestroyDebugReportCallbackEXT(
 	VkInstance instance, 
 	VkDebugReportCallbackEXT callback, 
-	const VkAllocationCallbacks * pAllocator) {
+	const VkAllocationCallbacks* pAllocator) {
 	auto func = (PFN_vkDestroyDebugReportCallbackEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugReportCallbackEXT");
 	if (func != nullptr) {
 		func(instance, callback, pAllocator);

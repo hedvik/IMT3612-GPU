@@ -4,6 +4,13 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define RENDERABLE_UBO		0
 #define SCENE_UBO			1
+
+#define CUBE_MAP_TEX_DIM    1024
+#define CUBE_MAP_TEX_FILTER VK_FILTER_LINEAR
+
+#define OFFSCREEN_FB_TEX_DIM      CUBE_MAP_TEX_DIM
+#define OFFSCREEN_FB_COLOR_FORMAT VK_FORMAT_R32_SFLOAT
+
 #include <GLFW/glfw3.h>
 #include <stdexcept>
 #include <vector>
@@ -53,9 +60,10 @@ public:
 	static void onWindowResized(GLFWwindow* window, int width, int height);
 	VulkanAPIHandler* getPtr();
 	VkDevice getDevice();
+	VkCommandPool getCommandPool();
 	void handleInput(GLFWKeyEvent event);
 
-	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, int subResourceLayerCount = 1);
 	void createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, VDeleter<VkImageView>& imageView);
 
 	void createBuffer(
@@ -76,6 +84,12 @@ public:
 		VDeleter<VkImage>& image,
 		VDeleter<VkDeviceMemory>& imageMemory);
 	void copyImage(VkImage srcImage, VkImage dstImage, uint32_t width, uint32_t height);
+
+	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+	VkFormat findDepthFormat();
+
+	VkCommandBuffer beginSingleTimeCommands();
+	void endSingleTimeCommands(VkCommandBuffer commandBuffer);
 private:
 	//********************
 	// Consts
@@ -187,16 +201,12 @@ private:
 	void createSemaphores();
 	void createShaderModule(const std::vector<char>& code, VDeleter<VkShaderModule>& shaderModule);
 	void recreateSwapChain();
-	VkCommandBuffer beginSingleTimeCommands();
-	void endSingleTimeCommands(VkCommandBuffer commandBuffer);
 	VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
-	VkFormat findDepthFormat();
 	bool hasStencilComponent(VkFormat format);
 
 	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 	SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 	std::vector<const char*> getRequiredExtensions();
-	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
 	// For choosing color depth
 	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
