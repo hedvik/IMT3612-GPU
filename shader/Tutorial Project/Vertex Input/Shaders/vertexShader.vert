@@ -7,6 +7,7 @@
 // Uniforms
 layout(set = RENDERABLE_UBO, binding = 0) uniform RenderableUBO {
     mat4 MVP;
+	mat4 ProjectionMatrix;
 	mat4 ViewMatrix;
 	mat4 ModelMatrix;
 } renderableUBO;

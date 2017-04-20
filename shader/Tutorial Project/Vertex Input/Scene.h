@@ -42,14 +42,20 @@ public:
 	void prepareCubeMaps();
 	void prepareOffscreenFramebuffer();
 	void updateCubeFace(uint32_t faceIndex);
-	
+	void buildOffscreenCommandBuffer();
+	void createOffscreenPipelineLayout();
+	void prepareOffscreenRenderpass();
+	void prepareOffscreenPipeline(VkGraphicsPipelineCreateInfo pipelineInfo);
+
+	VkSemaphore getOffscreenSemaphore();
+	VkCommandBuffer getOffscreenCommandBuffer();
 	std::vector<std::pair<RenderableTypes, std::shared_ptr<Renderable>>> getRenderableObjects();
 	VkDescriptorSetLayout getDescriptorSetLayout(DescriptorLayoutType type);
 	VkDescriptorSet getDescriptorSet();
 private:
 	VulkanAPIHandler* vulkanAPIHandler;
 	VkDescriptorSet descriptorSet;
-	VkDescriptorSet offscreenDescriptorSet;
+
 
 	std::vector<std::pair<RenderableTypes, std::shared_ptr<Renderable>>> renderableObjects{};
 	SceneUBO sceneUBO;
@@ -59,7 +65,6 @@ private:
 
 	VDeleter<VkDevice> device;
 	VDeleter<VkDescriptorSetLayout> descriptorSetLayout{ device, vkDestroyDescriptorSetLayout };
-	VDeleter<VkDescriptorSetLayout> offscreenDescriptorSetLayout{ device, vkDestroyDescriptorSetLayout };
 
 	// TODO: Might end up giving one of these to each ghost as well
 	VDeleter<VkImage> shadowCubeMapImage{ device , vkDestroyImage };
@@ -71,9 +76,6 @@ private:
 	VDeleter<VkDeviceMemory> uniformStagingBufferMemory{ device, vkFreeMemory };
 	VDeleter<VkBuffer> uniformBuffer{ device, vkDestroyBuffer };
 	VDeleter<VkDeviceMemory> uniformBufferMemory{ device, vkFreeMemory };
-
-	VDeleter<VkBuffer> offscreenUniformBuffer{ device, vkDestroyBuffer };
-	VDeleter<VkDeviceMemory> offScreenUniformBufferMemory{ device, vkFreeMemory };
 
 	VDeleter<VkPipelineLayout> offscreenPipelineLayout{ device, vkDestroyPipelineLayout };
 	VDeleter<VkPipeline> offscreenPipeline{ device, vkDestroyPipeline };

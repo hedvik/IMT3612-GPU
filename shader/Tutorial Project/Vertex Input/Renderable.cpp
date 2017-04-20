@@ -402,6 +402,7 @@ void Renderable::updateUniformBuffer(glm::mat4 projectionMatrix, glm::mat4 viewM
 	ubo.mvp = projectionMatrix * viewMatrix * modelMatrix;
 	ubo.viewMatrix = viewMatrix;
 	ubo.modelMatrix = modelMatrix;
+	ubo.projectionMatrix = projectionMatrix;
 
 	// Updating UBO
 	void* data;

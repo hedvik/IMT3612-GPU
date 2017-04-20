@@ -63,7 +63,8 @@ public:
 	VkCommandPool getCommandPool();
 	void handleInput(GLFWKeyEvent event);
 
-	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, int subResourceLayerCount = 1);
+	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, int subResourceLayerCount = 1, bool hasDepthStencilBit = false);
+	void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, int subResourceLayerCount = 1, bool hasDepthStencilBit = false);
 	void createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, VDeleter<VkImageView>& imageView);
 
 	void createBuffer(
@@ -84,12 +85,15 @@ public:
 		VDeleter<VkImage>& image,
 		VDeleter<VkDeviceMemory>& imageMemory);
 	void copyImage(VkImage srcImage, VkImage dstImage, uint32_t width, uint32_t height);
+	void copyImage(VkImage srcImage, VkImage dstImage, VkImageCopy copyRegion);
 
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 	VkFormat findDepthFormat();
 
-	VkCommandBuffer beginSingleTimeCommands();
+	VkCommandBuffer beginSingleTimeCommands(bool startRecording = true);
 	void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+
+	void createShaderModule(const std::vector<char>& code, VDeleter<VkShaderModule>& shaderModule);
 private:
 	//********************
 	// Consts
@@ -199,7 +203,6 @@ private:
 	void createDescriptorPool();
 	void createDescriptorSet();
 	void createSemaphores();
-	void createShaderModule(const std::vector<char>& code, VDeleter<VkShaderModule>& shaderModule);
 	void recreateSwapChain();
 	VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 	bool hasStencilComponent(VkFormat format);
@@ -207,6 +210,8 @@ private:
 	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 	SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 	std::vector<const char*> getRequiredExtensions();
+
+	void transitionImageLayoutCore(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, VkCommandBuffer commandBuffer, int subresourceLayerCount = 1, bool hasDepthStencilBit = false);
 
 	// For choosing color depth
 	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);

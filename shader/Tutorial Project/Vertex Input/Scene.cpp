@@ -8,7 +8,7 @@ Scene::Scene(VulkanAPIHandler* vulkanAPI) {
 	sceneUBO.lightPositions[0] = glm::vec4(400, 100, 400, 1.0);
 	sceneUBO.lightColors[0] = glm::vec4(1, 1, 1, 1);
 
-	frameBufferDepthFormat = vulkanAPIHandler->findDepthFormat();
+	frameBufferDepthFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
 }
 
 Scene::~Scene() {
@@ -25,6 +25,16 @@ Scene::~Scene() {
 
 	vkDestroyFramebuffer(device, offscreenPass.frameBuffer, nullptr);
 	vkDestroyRenderPass(device, offscreenPass.renderPass, nullptr);
+
+	vkDestroySemaphore(device, offscreenPass.semaphore, nullptr);
+}
+
+VkSemaphore Scene::getOffscreenSemaphore() {
+	return offscreenPass.semaphore;
+}
+
+VkCommandBuffer Scene::getOffscreenCommandBuffer() {
+	return offscreenPass.commandBuffer;
 }
 
 std::vector<std::pair<RenderableTypes, std::shared_ptr<Renderable>>> Scene::getRenderableObjects() {
@@ -110,16 +120,24 @@ void Scene::createDescriptorSetLayouts() {
 		renderable.second->createDescriptorSetLayout();
 	}
 	
+	// Scene descriptor set layout
 	VkDescriptorSetLayoutBinding uboLayoutBinding = {};
 	uboLayoutBinding.binding = 0;
 	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	uboLayoutBinding.descriptorCount = 1;
 	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+	VkDescriptorSetLayoutBinding cubeMapLayoutBinding = {};
+	cubeMapLayoutBinding.binding = 1;
+	cubeMapLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	cubeMapLayoutBinding.descriptorCount = 1;
+	cubeMapLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	std::array<VkDescriptorSetLayoutBinding, 2> layoutBindings = { uboLayoutBinding, cubeMapLayoutBinding };
 	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = 1;
-	layoutInfo.pBindings = &uboLayoutBinding;
+	layoutInfo.bindingCount = layoutBindings.size();
+	layoutInfo.pBindings = layoutBindings.data();
 
 	VkResult result = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, descriptorSetLayout.replace());
 	if (result != VK_SUCCESS) {
@@ -133,7 +151,7 @@ void Scene::createDescriptorSets(VkDescriptorPool descPool) {
 		renderable.second->createDescriptorSet(descPool);
 	}
 	
-	// Creating the descriptor set for the scene UBO
+	// Creating the descriptor set for the scene UBO and shadow cube map
 	VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
 	VkDescriptorSetAllocateInfo allocInfo = {};
 	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -151,17 +169,30 @@ void Scene::createDescriptorSets(VkDescriptorPool descPool) {
 	bufferInfo.offset = 0;
 	bufferInfo.range = sizeof(SceneUBO);
 
-	VkWriteDescriptorSet descriptorWrites = {};
+	VkDescriptorImageInfo cubeMapInfo = {};
+	cubeMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	cubeMapInfo.imageView = shadowCubeMapImageView;
+	cubeMapInfo.sampler = shadowCubeMapSampler;
 
-	descriptorWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	descriptorWrites.dstSet = descriptorSet;
-	descriptorWrites.dstBinding = 0;
-	descriptorWrites.dstArrayElement = 0;
-	descriptorWrites.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	descriptorWrites.descriptorCount = 1;
-	descriptorWrites.pBufferInfo = &bufferInfo;
+	std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
 
-	vkUpdateDescriptorSets(device, 1, &descriptorWrites, 0, nullptr); 
+	descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[0].dstSet = descriptorSet;
+	descriptorWrites[0].dstBinding = 0;
+	descriptorWrites[0].dstArrayElement = 0;
+	descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	descriptorWrites[0].descriptorCount = 1;
+	descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+	descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorWrites[1].dstSet = descriptorSet;
+	descriptorWrites[1].dstBinding = 1;
+	descriptorWrites[1].dstArrayElement = 0;
+	descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	descriptorWrites[1].descriptorCount = 1;
+	descriptorWrites[1].pImageInfo = &cubeMapInfo;
+
+	vkUpdateDescriptorSets(device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr); 
 }
 
 void Scene::createRenderables() {
@@ -227,7 +258,6 @@ void Scene::prepareCubeMaps() {
 	VkFormat format = VK_FORMAT_R32_SFLOAT;
 
 	// Cube map image description
-	// TODO: Merge this with createImage()
 	VkImageCreateInfo imageCreateInfo = {};
 	imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -242,25 +272,10 @@ void Scene::prepareCubeMaps() {
 	imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	imageCreateInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 
-	if (vkCreateImage(device, &imageCreateInfo, nullptr, shadowCubeMapImage.replace()) != VK_SUCCESS) {
-		throw std::runtime_error("failed to create image!");
-	}
-
 	VkMemoryRequirements memRequirements;
-	vkGetImageMemoryRequirements(device, shadowCubeMapImage, &memRequirements);
-
 	VkMemoryAllocateInfo memAllocInfo = {};
 	memAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	memAllocInfo.allocationSize = memRequirements.size;
-	memAllocInfo.memoryTypeIndex = vulkanAPIHandler->findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	if (vkAllocateMemory(device, &memAllocInfo, nullptr, shadowCubeMapMemory.replace()) != VK_SUCCESS) {
-		throw std::runtime_error("failed to allocate image memory!");
-	}
-
-	vkBindImageMemory(device, shadowCubeMapImage, shadowCubeMapMemory, 0);
-	//TODO END
-
+	
 	// Setting up and recording the command buffer
 	VkCommandBuffer layoutCmd = vulkanAPIHandler->beginSingleTimeCommands();
 
@@ -280,7 +295,7 @@ void Scene::prepareCubeMaps() {
 	vkBindImageMemory(device, shadowCubeMapImage, shadowCubeMapMemory, 0);
 
 	// Image barrier for optimal image (target)	
-	vulkanAPIHandler->transitionImageLayout(shadowCubeMapImage, frameBufferDepthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
+	vulkanAPIHandler->transitionImageLayout(shadowCubeMapImage, VK_FORMAT_R32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
 
 	// Flush command buffer
 	vulkanAPIHandler->endSingleTimeCommands(layoutCmd);
@@ -328,14 +343,12 @@ void Scene::prepareOffscreenFramebuffer() {
 	offscreenPass.width = OFFSCREEN_FB_TEX_DIM;
 	offscreenPass.height = OFFSCREEN_FB_TEX_DIM;
 
-	VkFormat frameBufferColorFormat = OFFSCREEN_FB_COLOR_FORMAT;
-
 	// Color attachment
 	// TODO: Merge with createImage
 	VkImageCreateInfo imageCreateInfo = {};
 	imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
-	imageCreateInfo.format = frameBufferColorFormat;
+	imageCreateInfo.format = OFFSCREEN_FB_COLOR_FORMAT;
 	imageCreateInfo.extent.width = offscreenPass.width;
 	imageCreateInfo.extent.height = offscreenPass.height;
 	imageCreateInfo.extent.depth = 1;
@@ -349,9 +362,9 @@ void Scene::prepareOffscreenFramebuffer() {
 	imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 	VkImageViewCreateInfo colorImageView = {};
+	colorImageView.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	colorImageView.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	colorImageView.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	colorImageView.format = frameBufferColorFormat;
+	colorImageView.format = OFFSCREEN_FB_COLOR_FORMAT;
 	colorImageView.flags = 0;
 	colorImageView.subresourceRange = {};
 	colorImageView.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -382,7 +395,7 @@ void Scene::prepareOffscreenFramebuffer() {
 
 	VkCommandBuffer layoutCmd = vulkanAPIHandler->beginSingleTimeCommands();
 
-	vulkanAPIHandler->transitionImageLayout(offscreenPass.color.image, frameBufferColorFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+	vulkanAPIHandler->transitionImageLayout(offscreenPass.color.image, OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
 	colorImageView.image = offscreenPass.color.image;
 
@@ -395,7 +408,7 @@ void Scene::prepareOffscreenFramebuffer() {
 	imageCreateInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
 	VkImageViewCreateInfo depthStencilView = {};
-
+	depthStencilView.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	depthStencilView.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	depthStencilView.format = frameBufferDepthFormat;
 	depthStencilView.flags = 0;
@@ -421,7 +434,7 @@ void Scene::prepareOffscreenFramebuffer() {
 		throw std::runtime_error("failed to bind offscreen depth memory");
 	}
 
-	vulkanAPIHandler->transitionImageLayout(offscreenPass.depth.image, frameBufferDepthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+	vulkanAPIHandler->transitionImageLayout(offscreenPass.depth.image, frameBufferDepthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1, true);
 
 	// Stop commandBuffer recording
 	vulkanAPIHandler->endSingleTimeCommands(layoutCmd);
@@ -459,8 +472,6 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 	clearValues[0].color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
 	clearValues[1].depthStencil = { 1.0f, 0 };
 
-	VkFormat frameBufferColorFormat = OFFSCREEN_FB_COLOR_FORMAT;
-
 	VkRenderPassBeginInfo renderPassBeginInfo = {};
 	renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	// Reuse render pass from example pass
@@ -473,8 +484,7 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 
 	// Update view matrix via push constant
 	glm::mat4 viewMatrix = glm::mat4();
-	switch (faceIndex)
-	{
+	switch (faceIndex) {
 	case 0: // POSITIVE_X
 		viewMatrix = glm::rotate(viewMatrix, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 		viewMatrix = glm::rotate(viewMatrix, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -510,8 +520,9 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 		sizeof(glm::mat4),
 		&viewMatrix);
 
+	// Binding buffers for renderables
 	vkCmdBindPipeline(offscreenPass.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipeline);
-	vkCmdBindDescriptorSets(offscreenPass.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipelineLayout, 0, 1, &offscreenDescriptorSet, 0, NULL);
+	vkCmdBindDescriptorSets(offscreenPass.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipelineLayout, SCENE_UBO, 1, &descriptorSet, 0, nullptr);
 
 	VkDeviceSize offsets[] = { 0 };
 	for (auto& renderable : renderableObjects) {
@@ -520,13 +531,14 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 
 		vkCmdBindVertexBuffers(offscreenPass.commandBuffer, 0, 1, currentVertexBuffer, offsets);
 		vkCmdBindIndexBuffer(offscreenPass.commandBuffer, renderable.second->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+		vkCmdBindDescriptorSets(offscreenPass.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipelineLayout, RENDERABLE_UBO, 1, &currentDescriptorSet, 0, nullptr);
 
 		vkCmdDrawIndexed(offscreenPass.commandBuffer, renderable.second->numIndices(), 1, 0, 0, 0);
 	}
 
 	vkCmdEndRenderPass(offscreenPass.commandBuffer);
 	// Make sure color writes to the framebuffer are finished before using it as transfer source
-	vulkanAPIHandler->transitionImageLayout(offscreenPass.color.image, frameBufferColorFormat, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	vulkanAPIHandler->transitionImageLayout(offscreenPass.commandBuffer, offscreenPass.color.image, OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
 	// Copy region for transfer from framebuffer to cube face
 	VkImageCopy copyRegion = {};
@@ -546,7 +558,6 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 	copyRegion.extent.width = CUBE_MAP_TEX_DIM;
 	copyRegion.extent.height = CUBE_MAP_TEX_DIM;
 	copyRegion.extent.depth = 1;
-
 	// Put image copy into command buffer
 	vkCmdCopyImage(
 		offscreenPass.commandBuffer,
@@ -558,7 +569,161 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 		&copyRegion);
 
 	// Transform framebuffer color attachment back 
-	vulkanAPIHandler->transitionImageLayout(offscreenPass.color.image, frameBufferColorFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+	vulkanAPIHandler->transitionImageLayout(offscreenPass.commandBuffer, offscreenPass.color.image, OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+}
+
+// Command buffer for rendering and copying all cube map faces
+void Scene::buildOffscreenCommandBuffer() {
+	if (offscreenPass.commandBuffer == VK_NULL_HANDLE) {
+		offscreenPass.commandBuffer = vulkanAPIHandler->beginSingleTimeCommands(false);
+	}
+	
+	if (offscreenPass.semaphore == VK_NULL_HANDLE) {
+		// Create a semaphore used to synchronize offscreen rendering and usage
+		VkSemaphoreCreateInfo semaphoreCreateInfo = {};
+		semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+		
+		if (vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &offscreenPass.semaphore) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create offscreen semaphore");
+		}
+	}
+
+	VkCommandBufferBeginInfo cmdBufInfo = {};
+	cmdBufInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+	if (vkBeginCommandBuffer(offscreenPass.commandBuffer, &cmdBufInfo) != VK_SUCCESS) {
+		throw std::runtime_error("failed to begin offscreen command buffer");
+	}
+
+	VkViewport viewport = {};
+	viewport.width = (float)offscreenPass.width;
+	viewport.height = (float)offscreenPass.height;
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+	vkCmdSetViewport(offscreenPass.commandBuffer, 0, 1, &viewport);
+
+	VkRect2D scissor = {};
+	scissor.extent.width = offscreenPass.width;
+	scissor.extent.height = offscreenPass.height;
+	scissor.offset.x = 0;
+	scissor.offset.y = 0;
+	vkCmdSetScissor(offscreenPass.commandBuffer, 0, 1, &scissor);
+
+	// Change image layout for all cubemap faces to transfer destination
+	vulkanAPIHandler->transitionImageLayout(offscreenPass.commandBuffer, shadowCubeMapImage, OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6);
+
+	for (uint32_t face = 0; face < 6; ++face) {
+		updateCubeFace(face);
+	}
+
+	// Change image layout for all cubemap faces to shader read after they have been copied
+	vulkanAPIHandler->transitionImageLayout(offscreenPass.commandBuffer, shadowCubeMapImage, OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
+
+	if (vkEndCommandBuffer(offscreenPass.commandBuffer) != VK_SUCCESS) {
+		throw std::runtime_error("failed to end offscreen command buffer");
+	}
+}
+
+void Scene::createOffscreenPipelineLayout() {
+	// Offscreen pipeline layout. Uses push constants
+	VkDescriptorSetLayout setLayouts[] = { getDescriptorSetLayout(DESC_LAYOUT_RENDERABLE), descriptorSetLayout };
+	VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipelineLayoutInfo.setLayoutCount = std::size(setLayouts);
+	pipelineLayoutInfo.pSetLayouts = setLayouts;
+
+	VkPushConstantRange pushConstantRange = {};
+	pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	pushConstantRange.size = sizeof(glm::mat4);
+	pushConstantRange.offset = 0;
+	pipelineLayoutInfo.pushConstantRangeCount = 1;
+	pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
+	if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, offscreenPipelineLayout.replace()) != VK_SUCCESS) {
+		throw std::runtime_error("failed to create offscreen pipeline layout!");
+	}
+}
+
+void Scene::prepareOffscreenRenderpass() {
+	VkAttachmentDescription osAttachments[2] = {};
+
+	osAttachments[0].format = OFFSCREEN_FB_COLOR_FORMAT;
+	osAttachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+	osAttachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	osAttachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	osAttachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	osAttachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	osAttachments[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	osAttachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	// Depth attachment
+	osAttachments[1].format = frameBufferDepthFormat;
+	osAttachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+	osAttachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	osAttachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	osAttachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	osAttachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	osAttachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	osAttachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference colorReference = {};
+	colorReference.attachment = 0;
+	colorReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference depthReference = {};
+	depthReference.attachment = 1;
+	depthReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	VkSubpassDescription subpass = {};
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colorReference;
+	subpass.pDepthStencilAttachment = &depthReference;
+
+	VkRenderPassCreateInfo renderPassCreateInfo = {};
+	renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	renderPassCreateInfo.attachmentCount = 2;
+	renderPassCreateInfo.pAttachments = osAttachments;
+	renderPassCreateInfo.subpassCount = 1;
+	renderPassCreateInfo.pSubpasses = &subpass;
+
+	if (vkCreateRenderPass(device, &renderPassCreateInfo, nullptr, &offscreenPass.renderPass) != VK_SUCCESS) {
+		throw std::runtime_error("failed to create offscreen render pass!");
+	}
+}
+
+void Scene::prepareOffscreenPipeline(VkGraphicsPipelineCreateInfo pipelineInfo) {
+	auto vertShaderCode = ShaderHandler::readFile("Shaders/Offscreen/vert.spv");
+	auto fragShaderCode = ShaderHandler::readFile("Shaders/Offscreen/frag.spv");
+	
+	VDeleter<VkShaderModule> vertShaderModule{ device, vkDestroyShaderModule };
+	VDeleter<VkShaderModule> fragShaderModule{ device, vkDestroyShaderModule };
+	vulkanAPIHandler->createShaderModule(vertShaderCode, vertShaderModule);
+	vulkanAPIHandler->createShaderModule(fragShaderCode, fragShaderModule);
+
+	// Setting up shader modules
+	VkPipelineShaderStageCreateInfo vertShaderStageInfo = {};
+	vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+	vertShaderStageInfo.module = vertShaderModule;
+	vertShaderStageInfo.pName = "main";
+	//vertShaderStageInfo.pSpecializationInfo allows you to specify values for shader constants
+
+	VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
+	fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	fragShaderStageInfo.module = fragShaderModule;
+	fragShaderStageInfo.pName = "main";
+
+	VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+	pipelineInfo.stageCount = 2;
+	pipelineInfo.pStages = shaderStages;
+	pipelineInfo.layout = offscreenPipelineLayout;
+	pipelineInfo.renderPass = offscreenPass.renderPass;
+	if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, offscreenPipeline.replace()) != VK_SUCCESS) {
+		throw std::runtime_error("failed to create offscreen pipeline!");
+	}
 }
 
 VkDescriptorSetLayout Scene::getDescriptorSetLayout(DescriptorLayoutType type) {

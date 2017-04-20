@@ -16,7 +16,8 @@ VulkanAPIHandler::~VulkanAPIHandler() {
 void VulkanAPIHandler::drawFrame() {
 	uint32_t imageIndex;
 	vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
-
+	
+	// Offscreen rendering
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
@@ -26,11 +27,25 @@ void VulkanAPIHandler::drawFrame() {
 	submitInfo.pWaitSemaphores = waitSemaphores;
 	submitInfo.pWaitDstStageMask = waitStages;
 	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
+	auto offscreenCommandBuffer = scene->getOffscreenCommandBuffer();
+	submitInfo.pCommandBuffers = &offscreenCommandBuffer;
 
-	VkSemaphore signalSemaphores[] = { renderFinishedSemaphore };
-	submitInfo.signalSemaphoreCount = 1;
+	VkSemaphore signalSemaphores[] = { scene->getOffscreenSemaphore() };
+	submitInfo.signalSemaphoreCount = std::size(signalSemaphores);
 	submitInfo.pSignalSemaphores = signalSemaphores;
+
+	if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+		throw std::runtime_error("failed to submit draw command buffer!");
+	}
+
+	// Scene rendering
+	waitSemaphores[0] = { scene->getOffscreenSemaphore() };
+	submitInfo.pWaitSemaphores = waitSemaphores;
+	
+	signalSemaphores[0] = { renderFinishedSemaphore };
+	submitInfo.pSignalSemaphores = signalSemaphores;
+
+	submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
 
 	if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
 		throw std::runtime_error("failed to submit draw command buffer!");
@@ -113,6 +128,9 @@ void VulkanAPIHandler::initVulkan() {
 	createVertexIndexBuffers();
 	createUniformBuffers();
 	createDescriptorPool();
+
+	scene->prepareCubeMaps();
+
 	createDescriptorSet();
 	createCommandBuffers();
 	createSemaphores();
@@ -384,6 +402,8 @@ void VulkanAPIHandler::createImageViews() {
 }
 
 void VulkanAPIHandler::createRenderPass() {
+	scene->prepareOffscreenRenderpass();
+
 	VkAttachmentDescription colorAttachment = {};
 	colorAttachment.format = swapChainImageFormat;
 	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -604,10 +624,11 @@ void VulkanAPIHandler::createGraphicsPipeline() {
 	pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
 	pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
 
-	if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
-		pipelineLayout.replace()) != VK_SUCCESS) {
+	if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, pipelineLayout.replace()) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create pipeline layout!");
 	}
+
+	scene->createOffscreenPipelineLayout();
 
 	VkGraphicsPipelineCreateInfo pipelineInfo = {};
 	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -631,6 +652,8 @@ void VulkanAPIHandler::createGraphicsPipeline() {
 	if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, graphicsPipeline.replace()) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create graphics pipeline!");
 	}
+
+	scene->prepareOffscreenPipeline(pipelineInfo);
 }
 
 void VulkanAPIHandler::createFramebuffers() {
@@ -655,6 +678,8 @@ void VulkanAPIHandler::createFramebuffers() {
 			throw std::runtime_error("failed to create framebuffer!");
 		}
 	}
+
+	scene->prepareOffscreenFramebuffer();
 }
 
 void VulkanAPIHandler::createCommandPool() {
@@ -692,6 +717,7 @@ void VulkanAPIHandler::createTextureSamplers() {
 }
 
 void VulkanAPIHandler::createCommandBuffers() {
+	scene->buildOffscreenCommandBuffer();
 	if (commandBuffers.size() > 0) {
 		vkFreeCommandBuffers(device, commandPool, commandBuffers.size(), commandBuffers.data());
 	}
@@ -735,7 +761,7 @@ void VulkanAPIHandler::createCommandBuffers() {
 		vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 		vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
 
-		// Binding buffers for renderables
+		// Binding buffers for renderables and scene
 		VkDescriptorSet sceneDescSet = scene->getDescriptorSet();
 		vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, SCENE_UBO, 1, &sceneDescSet, 0, nullptr);
 		
@@ -770,13 +796,15 @@ void VulkanAPIHandler::createUniformBuffers() {
 void VulkanAPIHandler::createDescriptorPool() {
 	std::array<VkDescriptorPoolSize, 3> poolSizes = {};
 	
-	// Each object has a uniform buffer + the scene has one too
+	// General Uniform buffer containing matrices. The scene also has one of these so +1
 	poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	poolSizes[0].descriptorCount = scene->getRenderableObjects().size() + 1;
 	
+	// Texture sampler, used for shadow cube map as well
 	poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	poolSizes[1].descriptorCount = scene->getRenderableObjects().size();
+	poolSizes[1].descriptorCount = scene->getRenderableObjects().size() + 1;
 	
+	// Material buffer
 	poolSizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	poolSizes[2].descriptorCount = scene->getRenderableObjects().size();
 
@@ -829,7 +857,7 @@ void VulkanAPIHandler::recreateSwapChain() {
 	createCommandBuffers();
 }
 
-VkCommandBuffer VulkanAPIHandler::beginSingleTimeCommands() {
+VkCommandBuffer VulkanAPIHandler::beginSingleTimeCommands(bool startRecording) {
 	VkCommandBufferAllocateInfo allocInfo = {};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -839,11 +867,13 @@ VkCommandBuffer VulkanAPIHandler::beginSingleTimeCommands() {
 	VkCommandBuffer commandBuffer;
 	vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
 
-	VkCommandBufferBeginInfo beginInfo = {};
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	if (startRecording) {
+		VkCommandBufferBeginInfo beginInfo = {};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-	vkBeginCommandBuffer(commandBuffer, &beginInfo);
+		vkBeginCommandBuffer(commandBuffer, &beginInfo);
+	}
 
 	return commandBuffer;
 }
@@ -862,82 +892,16 @@ void VulkanAPIHandler::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
 	vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
-void VulkanAPIHandler::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, int subResouceLayerCount) {
+void VulkanAPIHandler::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, int subResourceLayerCount, bool hasDepthStencilBit) {
 	VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
-	VkImageMemoryBarrier barrier = {};
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.oldLayout = oldLayout;
-	barrier.newLayout = newLayout;
-	// If you are using the barrier to transfer queue family ownership, then these two fields should be the indices of the queue families
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image = image;
-	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	barrier.subresourceRange.baseMipLevel = 0;
-	barrier.subresourceRange.levelCount = 1;
-	barrier.subresourceRange.baseArrayLayer = 0;
-	barrier.subresourceRange.layerCount = subResouceLayerCount;
-
-	if (oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
-		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-	}
-	else if (oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	}
-	else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-	}
-	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-		barrier.srcAccessMask = 0;
-		barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-	}
-	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-		barrier.srcAccessMask = 0;
-	}
-	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
-		// DO STUFF
-	}
-	else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&  newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
-		// DO STUFF
-	}
-	else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
-		// DO STUFF
-	}
-	else {
-		throw std::invalid_argument("unsupported layout transition!");
-	}
-	
-	if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-
-		if (hasStencilComponent(format)) {
-			barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
-		}
-	}
-	else if (newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-		if (barrier.srcAccessMask == 0) {
-			barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
-		}
-		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-	}
-	else {
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	}
-
-	vkCmdPipelineBarrier(
-		commandBuffer,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-		0,
-		0, nullptr,
-		0, nullptr,
-		1, &barrier
-	);
+	transitionImageLayoutCore(image, format, oldLayout, newLayout, commandBuffer, subResourceLayerCount, hasDepthStencilBit);
 
 	endSingleTimeCommands(commandBuffer);
+}
+
+void VulkanAPIHandler::transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, int subResourceLayerCount, bool hasDepthStencilBit) {
+	transitionImageLayoutCore(image, format, oldLayout, newLayout, commandBuffer, subResourceLayerCount, hasDepthStencilBit);
 }
 
 void VulkanAPIHandler::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, VDeleter<VkImageView>& imageView) {
@@ -1059,6 +1023,88 @@ std::vector<const char*> VulkanAPIHandler::getRequiredExtensions() {
 	return extensions;
 }
 
+void VulkanAPIHandler::transitionImageLayoutCore(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, VkCommandBuffer commandBuffer, int subresourceLayerCount, bool hasDepthStencilBit) {
+	VkImageMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout = oldLayout;
+	barrier.newLayout = newLayout;
+	// If you are using the barrier to transfer queue family ownership, then these two fields should be the indices of the queue families
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = image;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = subresourceLayerCount;
+
+	if (oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+		barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = barrier.dstAccessMask | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+		barrier.srcAccessMask = 0;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&  newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+		barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+		barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	}
+	else {
+		throw std::invalid_argument("unsupported layout transition!");
+	}
+
+	if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+		if (hasStencilComponent(format) || hasDepthStencilBit) {
+			barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+		}
+	}
+	else if (newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+		if (barrier.srcAccessMask == 0) {
+			barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+		}
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	}
+	else {
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	}
+
+	vkCmdPipelineBarrier(
+		commandBuffer,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		0,
+		0, nullptr,
+		0, nullptr,
+		1, &barrier
+	);
+}
+
 uint32_t VulkanAPIHandler::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
 	VkPhysicalDeviceMemoryProperties memProperties;
 	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
@@ -1141,6 +1187,19 @@ void VulkanAPIHandler::copyImage(VkImage srcImage, VkImage dstImage, uint32_t wi
 		srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 		dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 		1, &region
+	);
+
+	endSingleTimeCommands(commandBuffer);
+}
+
+void VulkanAPIHandler::copyImage(VkImage srcImage, VkImage dstImage, VkImageCopy copyRegion) {
+	VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+
+	vkCmdCopyImage(
+		commandBuffer,
+		srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		1, &copyRegion
 	);
 
 	endSingleTimeCommands(commandBuffer);
