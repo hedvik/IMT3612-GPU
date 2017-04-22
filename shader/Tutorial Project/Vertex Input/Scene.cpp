@@ -5,7 +5,7 @@ Scene::Scene(VulkanAPIHandler* vulkanAPI) {
 	vulkanAPIHandler = vulkanAPI;
 	device = vulkanAPIHandler->getDevice();
 
-	sceneUBO.lightPositions[0] = glm::vec4(400, 50, 400, 1.0);
+	sceneUBO.lightPositions[0] = glm::vec4(410, 100, 410, 1.0);
 	sceneUBO.lightColors[0] = glm::vec4(1, 1, 1, 1);
 
 	frameBufferDepthFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
@@ -46,9 +46,13 @@ void Scene::updateUniformBuffers(glm::mat4 projectionMatrix, glm::mat4 viewMatri
 		renderable.second->updateUniformBuffer(projectionMatrix, viewMatrix);
 	}
 
-	// Offscreen matrix
-	sceneUBO.projectionMatrix = projectionMatrix;
-	sceneUBO.modelMatrix = glm::mat4(1.f); //glm::translate(glm::mat4(), glm::vec3(-sceneUBO.lightPositions[0].x, -sceneUBO.lightPositions[0].y, -sceneUBO.lightPositions[0].z));
+	// Offscreen matrices
+	// The projectionMatrix HAS to have a fov of M_PI / 2, 90 degrees. Any other FoV value distorts the map
+	sceneUBO.projectionMatrix = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, 1028.f);
+	sceneUBO.projectionMatrix[1][1] *= -1;
+	glm::vec3 lightPosition = sceneUBO.lightPositions[0];
+	sceneUBO.shadowViewMatrix = glm::lookAt(lightPosition, lightPosition - glm::vec3(0, 0, 1), glm::vec3(0, 1, 0));
+	sceneUBO.modelMatrix = glm::translate(glm::mat4(), -lightPosition);
 
 	void* data;
 	vkMapMemory(device, uniformStagingBufferMemory, 0, sizeof(sceneUBO), 0, &data);
@@ -435,28 +439,25 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 	// Update view matrix via push constant
 	glm::mat4 viewMatrix = glm::mat4();
 	glm::vec3 lightPosition = sceneUBO.lightPositions[0];
-	// LookAt wont render if you are looking through an axis, probably due to gimbal lock so we have to do a small offset
-	lightPosition -= glm::vec3(0, 0, 1);
-	glm::vec3 originalLightPosition = sceneUBO.lightPositions[0];
 	
 	switch (faceIndex) {
-	case 0: // POSITIVE_X
-		viewMatrix = glm::lookAt(lightPosition, originalLightPosition + glm::vec3(100, 0, 0), glm::vec3(0, 1, 0));
+	case 0: // POSITIVE_X 
+		viewMatrix = glm::lookAt(lightPosition, lightPosition - glm::vec3(1, 0, 0), glm::vec3(0, -1, 0));
 		break;
 	case 1:	// NEGATIVE_X
-		viewMatrix = glm::lookAt(lightPosition, originalLightPosition - glm::vec3(100, 0, 0), glm::vec3(0, 1, 0));
+		viewMatrix = glm::lookAt(lightPosition, lightPosition + glm::vec3(1, 0, 0), glm::vec3(0, -1, 0));
 		break;
 	case 2:	// POSITIVE_Y
-		viewMatrix = glm::lookAt(lightPosition, originalLightPosition + glm::vec3(0, 100, 0), glm::vec3(0, 0, 1));
+		viewMatrix = glm::lookAt(lightPosition, lightPosition - glm::vec3(0, 1, 0), glm::vec3(0, 0, 1));
 		break;
 	case 3:	// NEGATIVE_Y
-		viewMatrix = glm::lookAt(lightPosition, originalLightPosition - glm::vec3(0, 100, 0), glm::vec3(0, 0, -1));
+		viewMatrix = glm::lookAt(lightPosition, lightPosition + glm::vec3(0, 1, 0), glm::vec3(0, 0, -1));
 		break;
 	case 4:	// POSITIVE_Z
-		viewMatrix = glm::lookAt(lightPosition, originalLightPosition + glm::vec3(0, 0, 100), glm::vec3(0, 1, 0));
+		viewMatrix = glm::lookAt(lightPosition, lightPosition - glm::vec3(0, 0, 1), glm::vec3(0, -1, 0));
 		break;
 	case 5:	// NEGATIVE_Z
-		viewMatrix = glm::lookAt(lightPosition, originalLightPosition - glm::vec3(0, 0, 100), glm::vec3(0, 1, 0));
+		viewMatrix = glm::lookAt(lightPosition, lightPosition + glm::vec3(0, 0, 1), glm::vec3(0, -1, 0));
 		break;
 	} 
 	
@@ -684,7 +685,6 @@ void Scene::prepareOffscreenPipeline(VkGraphicsPipelineCreateInfo pipelineInfo) 
 	vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
 	vertShaderStageInfo.module = vertShaderModule;
 	vertShaderStageInfo.pName = "main";
-	//vertShaderStageInfo.pSpecializationInfo allows you to specify values for shader constants
 
 	VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
 	fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -694,10 +694,32 @@ void Scene::prepareOffscreenPipeline(VkGraphicsPipelineCreateInfo pipelineInfo) 
 
 	VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
+	// Setting up offscreen viewports and scissors. These HAVE to be the dimensions of the texture, otherwise everything breaks!
+	VkViewport viewport = {};
+	viewport.x = 0.0f;
+	viewport.y = 0.0f;
+	viewport.width = OFFSCREEN_FB_TEX_DIM;
+	viewport.height = OFFSCREEN_FB_TEX_DIM;
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+
+	VkRect2D scissor = {};
+	scissor.offset = { 0, 0 };
+	scissor.extent.width = OFFSCREEN_FB_TEX_DIM;
+	scissor.extent.height = OFFSCREEN_FB_TEX_DIM;
+
+	VkPipelineViewportStateCreateInfo viewportState = {};
+	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewportState.viewportCount = 1;
+	viewportState.pViewports = &viewport;
+	viewportState.scissorCount = 1;
+	viewportState.pScissors = &scissor;
+
 	pipelineInfo.stageCount = 2;
 	pipelineInfo.pStages = shaderStages;
 	pipelineInfo.layout = offscreenPipelineLayout;
 	pipelineInfo.renderPass = offscreenPass.renderPass;
+	pipelineInfo.pViewportState = &viewportState;
 	if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, offscreenPipeline.replace()) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create offscreen pipeline!");
 	}

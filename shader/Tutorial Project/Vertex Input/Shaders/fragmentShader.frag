@@ -18,8 +18,10 @@ layout(location = 0) in vec4 vertexPosition_cameraspace;
 layout(location = 1) in vec4 fragmentColor;
 layout(location = 2) in vec4 fragmentTextureCoordinate;
 layout(location = 3) in vec4 normal_cameraspace;
-layout(location = 4) in vec4 lightPositions_cameraspace[NUM_LIGHTS];
-layout(location = 10) in vec4 lightColors[NUM_LIGHTS];
+layout(location = 4) in vec4 vertexPosition_worldspace;
+layout(location = 5) in vec4 lightPosition_worldspace;
+layout(location = 6) in vec4 lightPositions_cameraspace[NUM_LIGHTS];
+layout(location = 12) in vec4 lightColors[NUM_LIGHTS];
 
 layout(location = 0) out vec4 outColor;
 
@@ -27,7 +29,7 @@ layout(location = 0) out vec4 outColor;
 const vec4 WHITE = vec4(1.0, 1.0, 1.0, 1.0);
 
 // Default material for everything. Might want this as a part of the RenderableUBO
-const float ambientComponent = 0.05f;
+const float ambientComponent = 0.25f;
 const float diffuseComponent = 0.5f;
 const vec4 specularComponent = WHITE;
 
@@ -88,9 +90,10 @@ void main() {
 	}
 	
 	// Shadow
-	vec3 lightVector = (lightPositions_cameraspace[0]).xyz - vertexPosition_cameraspace.xyz;
-	float sampledDistance = texture(shadowSampler, lightVector).r;
-	float distance = length(lightVector);
+	// Direction of the light (from the fragment to the light)
+	vec4 lightDirection = lightPosition_worldspace - vertexPosition_worldspace;
+	float sampledDistance = texture(shadowSampler, lightDirection.xyz).r;
+	float distance = length(lightDirection);
 	
 	float shadow = (distance <= sampledDistance + 0.15) ? 1.0 : 0.5;
 	outColor.rgb *= shadow;

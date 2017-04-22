@@ -14,6 +14,7 @@ layout(set = RENDERABLE_UBO, binding = 0) uniform RenderableUBO {
 
 layout(set = SCENE_UBO, binding = 0) uniform SceneUBO {
 	mat4 ProjectionMatrix;
+	mat4 ShadowViewMatrix;
 	mat4 ModelMatrix;
 	vec4 lightPositions_worldspace[NUM_LIGHTS];
 	vec4 lightColors[NUM_LIGHTS];
@@ -30,8 +31,12 @@ layout(location = 0) out vec4 vertexPosition_cameraspace;
 layout(location = 1) out vec4 fragmentColor;
 layout(location = 2) out vec4 fragmentTextureCoordinate;
 layout(location = 3) out vec4 normal_cameraspace;
-layout(location = 4) out vec4 lightPositions_cameraspace[NUM_LIGHTS];
-layout(location = 10) out vec4 lightColors[NUM_LIGHTS];
+
+layout(location = 4) out vec4 vertexPosition_worldspace;
+layout(location = 5) out vec4 lightPosition_worldspace;
+
+layout(location = 6) out vec4 lightPositions_cameraspace[NUM_LIGHTS];
+layout(location = 12) out vec4 lightColors[NUM_LIGHTS];
 
 void main() {
     gl_Position = renderableUBO.MVP * vertexPosition_modelspace;
@@ -52,4 +57,7 @@ void main() {
 	} 
 	
 	lightColors = sceneUBO.lightColors;
+	
+	vertexPosition_worldspace =  renderableUBO.ModelMatrix * vertexPosition_modelspace;
+	lightPosition_worldspace = sceneUBO.lightPositions_worldspace[0];
 }
