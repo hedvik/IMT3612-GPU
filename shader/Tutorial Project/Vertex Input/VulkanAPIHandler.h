@@ -66,6 +66,8 @@ public:
 	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, int subResourceLayerCount = 1, bool hasDepthStencilBit = false);
 	void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, int subResourceLayerCount = 1, bool hasDepthStencilBit = false);
 	void createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, VDeleter<VkImageView>& imageView);
+	void createImageView(VkImageViewCreateInfo viewInfo, VDeleter<VkImageView>& imageView);
+	void createImageView(VkImageViewCreateInfo viewInfo, VkImageView& imageView);
 
 	void createBuffer(
 		VkDeviceSize size,
@@ -84,6 +86,16 @@ public:
 		VkMemoryPropertyFlags properties,
 		VDeleter<VkImage>& image,
 		VDeleter<VkDeviceMemory>& imageMemory);
+	void createImage(
+		VkImageCreateInfo imageInfo,
+		VkMemoryPropertyFlags properties,
+		VDeleter<VkImage>& image,
+		VDeleter<VkDeviceMemory>& imageMemory);
+	void createImage(
+		VkImageCreateInfo imageInfo,
+		VkMemoryPropertyFlags properties,
+		VkImage& image,
+		VkDeviceMemory& imageMemory);
 	void copyImage(VkImage srcImage, VkImage dstImage, uint32_t width, uint32_t height);
 	void copyImage(VkImage srcImage, VkImage dstImage, VkImageCopy copyRegion);
 

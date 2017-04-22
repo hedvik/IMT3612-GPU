@@ -7,6 +7,7 @@
 #define NUM_LIGHTS                4
 
 layout(set = RENDERABLE_UBO, binding = BINDING_SAMPLER) uniform sampler2D textureSampler;
+layout(set = SCENE_UBO, binding = BINDING_SAMPLER) uniform samplerCube shadowSampler;
 layout(set = RENDERABLE_UBO, binding = BINDING_MATERIAL) uniform RenderableMaterial {
 	float specularExponent;
 	float specularGain;
@@ -85,6 +86,14 @@ void main() {
 		float attenuation = pow(clamp(1.0 - dist*dist /(attenuationRadius*attenuationRadius), 0.0, 1.0), 2);
 		outColor += materialAmbientColor + attenuation*(renderableMaterial.diffuseGain * diffuseColor + specularColor * renderableMaterial.specularGain); 
 	}
+	
+	// Shadow
+	vec3 lightVector = (lightPositions_cameraspace[0]).xyz - vertexPosition_cameraspace.xyz;
+	float sampledDistance = texture(shadowSampler, lightVector).r;
+	float distance = length(lightVector);
+	
+	float shadow = (distance <= sampledDistance + 0.15) ? 1.0 : 0.5;
+	outColor.rgb *= shadow;
 }
 
 vec4 calculateDiffuseColor(vec4 materialDiffuseColor, vec4 normal, vec4 lightDirection, vec4 lightColor) {

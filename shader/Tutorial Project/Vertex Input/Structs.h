@@ -21,6 +21,8 @@ struct RenderableMaterialUBO {
 };
 
 struct SceneUBO {
+	glm::mat4 projectionMatrix;
+	glm::mat4 modelMatrix;
 	glm::vec4 lightPositions[NUM_LIGHTS];
 	glm::vec4 lightColors[NUM_LIGHTS];
 };

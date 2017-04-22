@@ -5,7 +5,7 @@ Scene::Scene(VulkanAPIHandler* vulkanAPI) {
 	vulkanAPIHandler = vulkanAPI;
 	device = vulkanAPIHandler->getDevice();
 
-	sceneUBO.lightPositions[0] = glm::vec4(400, 100, 400, 1.0);
+	sceneUBO.lightPositions[0] = glm::vec4(400, 50, 400, 1.0);
 	sceneUBO.lightColors[0] = glm::vec4(1, 1, 1, 1);
 
 	frameBufferDepthFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
@@ -45,6 +45,10 @@ void Scene::updateUniformBuffers(glm::mat4 projectionMatrix, glm::mat4 viewMatri
 	for (auto& renderable : renderableObjects) {
 		renderable.second->updateUniformBuffer(projectionMatrix, viewMatrix);
 	}
+
+	// Offscreen matrix
+	sceneUBO.projectionMatrix = projectionMatrix;
+	sceneUBO.modelMatrix = glm::mat4(1.f); //glm::translate(glm::mat4(), glm::vec3(-sceneUBO.lightPositions[0].x, -sceneUBO.lightPositions[0].y, -sceneUBO.lightPositions[0].z));
 
 	void* data;
 	vkMapMemory(device, uniformStagingBufferMemory, 0, sizeof(sceneUBO), 0, &data);
@@ -255,7 +259,7 @@ void Scene::createRenderables() {
 // Contains a lot of code duplication from VulkanAPIHandler so refactoring the code here to use the VulkanAPIHandler would be nice, but not a priority yet
 void Scene::prepareCubeMaps() {
 	// 32 bit float format for higher precision
-	VkFormat format = VK_FORMAT_R32_SFLOAT;
+	VkFormat format = OFFSCREEN_FB_COLOR_FORMAT;
 
 	// Cube map image description
 	VkImageCreateInfo imageCreateInfo = {};
@@ -271,31 +275,15 @@ void Scene::prepareCubeMaps() {
 	imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	imageCreateInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-
-	VkMemoryRequirements memRequirements;
-	VkMemoryAllocateInfo memAllocInfo = {};
-	memAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	
 	// Setting up and recording the command buffer
 	VkCommandBuffer layoutCmd = vulkanAPIHandler->beginSingleTimeCommands();
 
 	// Create cube map image
-	if (vkCreateImage(device, &imageCreateInfo, nullptr, shadowCubeMapImage.replace()) != VK_SUCCESS) {
-		throw std::runtime_error("failed to create cubemap image");
-	}
-
-	vkGetImageMemoryRequirements(device, shadowCubeMapImage, &memRequirements);
-
-	memAllocInfo.allocationSize = memRequirements.size;
-	memAllocInfo.memoryTypeIndex = vulkanAPIHandler->findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	
-	if (vkAllocateMemory(device, &memAllocInfo, nullptr, shadowCubeMapMemory.replace()) != VK_SUCCESS) {
-		throw std::runtime_error("Failed to allocate cube map memory");
-	}
-	vkBindImageMemory(device, shadowCubeMapImage, shadowCubeMapMemory, 0);
+	vulkanAPIHandler->createImage(imageCreateInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowCubeMapImage, shadowCubeMapMemory);
 
 	// Image barrier for optimal image (target)	
-	vulkanAPIHandler->transitionImageLayout(shadowCubeMapImage, VK_FORMAT_R32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
+	vulkanAPIHandler->transitionImageLayout(layoutCmd, shadowCubeMapImage, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
 
 	// Flush command buffer
 	vulkanAPIHandler->endSingleTimeCommands(layoutCmd);
@@ -323,7 +311,6 @@ void Scene::prepareCubeMaps() {
 	// Create image view
 	VkImageViewCreateInfo view = {};
 	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	view.image = VK_NULL_HANDLE;
 	view.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
 	view.format = format;
 	view.components = { VK_COMPONENT_SWIZZLE_R };
@@ -331,9 +318,7 @@ void Scene::prepareCubeMaps() {
 	view.subresourceRange.layerCount = 6;
 	view.image = shadowCubeMapImage;
 	
-	if (vkCreateImageView(device, &view, nullptr, shadowCubeMapImageView.replace()) != VK_SUCCESS) {
-		throw std::runtime_error("Failed to create cubemap image view!");
-	}
+	vulkanAPIHandler->createImageView(view, shadowCubeMapImageView);
 }
 
 // Prepare a new framebuffer for offscreen rendering
@@ -344,7 +329,6 @@ void Scene::prepareOffscreenFramebuffer() {
 	offscreenPass.height = OFFSCREEN_FB_TEX_DIM;
 
 	// Color attachment
-	// TODO: Merge with createImage
 	VkImageCreateInfo imageCreateInfo = {};
 	imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -373,35 +357,16 @@ void Scene::prepareOffscreenFramebuffer() {
 	colorImageView.subresourceRange.baseArrayLayer = 0;
 	colorImageView.subresourceRange.layerCount = 1;
 
-	if (vkCreateImage(device, &imageCreateInfo, nullptr, &offscreenPass.color.image) != VK_SUCCESS) {
-		throw std::runtime_error("failed to create offscreen color image");
-	}
-
-	VkMemoryAllocateInfo memAlloc = {};
-	memAlloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	VkMemoryRequirements memReqs;
-
-	vkGetImageMemoryRequirements(device, offscreenPass.color.image, &memReqs);
-	memAlloc.allocationSize = memReqs.size;
-	memAlloc.memoryTypeIndex = vulkanAPIHandler->findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	vulkanAPIHandler->createImage(imageCreateInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, offscreenPass.color.image, offscreenPass.color.memory);
 	
-	if(vkAllocateMemory(device, &memAlloc, nullptr, &offscreenPass.color.memory) != VK_SUCCESS) {
-		throw std::runtime_error("failed to allocate offscreen color memory");
-	}
-	if (vkBindImageMemory(device, offscreenPass.color.image, offscreenPass.color.memory, 0) != VK_SUCCESS) {
-		throw std::runtime_error("failed to bind offscreen color memory");
-	}
-	// TODO END
-
+	// Start recording command buffer
 	VkCommandBuffer layoutCmd = vulkanAPIHandler->beginSingleTimeCommands();
 
-	vulkanAPIHandler->transitionImageLayout(offscreenPass.color.image, OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+	vulkanAPIHandler->transitionImageLayout(layoutCmd, offscreenPass.color.image, OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
 	colorImageView.image = offscreenPass.color.image;
 
-	if (vkCreateImageView(device, &colorImageView, nullptr, &offscreenPass.color.view) != VK_SUCCESS) {
-		throw std::runtime_error("failed to create offscreen color image view");
-	}
+	vulkanAPIHandler->createImageView(colorImageView, offscreenPass.color.view);
 
 	// Depth stencil attachment
 	imageCreateInfo.format = frameBufferDepthFormat;
@@ -419,30 +384,15 @@ void Scene::prepareOffscreenFramebuffer() {
 	depthStencilView.subresourceRange.baseArrayLayer = 0;
 	depthStencilView.subresourceRange.layerCount = 1;
 
-	if (vkCreateImage(device, &imageCreateInfo, nullptr, &offscreenPass.depth.image) != VK_SUCCESS) {
-		throw std::runtime_error("failed to create offscreen depth image");
-	}
+	vulkanAPIHandler->createImage(imageCreateInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, offscreenPass.depth.image, offscreenPass.depth.memory);
 
-	vkGetImageMemoryRequirements(device, offscreenPass.depth.image, &memReqs);
-	memAlloc.allocationSize = memReqs.size;
-	memAlloc.memoryTypeIndex = vulkanAPIHandler->findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	
-	if (vkAllocateMemory(device, &memAlloc, nullptr, &offscreenPass.depth.memory) != VK_SUCCESS) {
-		throw std::runtime_error("failed to allocate offscreen depth memory");
-	}
-	if (vkBindImageMemory(device, offscreenPass.depth.image, offscreenPass.depth.memory, 0) != VK_SUCCESS) {
-		throw std::runtime_error("failed to bind offscreen depth memory");
-	}
-
-	vulkanAPIHandler->transitionImageLayout(offscreenPass.depth.image, frameBufferDepthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1, true);
+	vulkanAPIHandler->transitionImageLayout(layoutCmd, offscreenPass.depth.image, frameBufferDepthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1, true);
 
 	// Stop commandBuffer recording
 	vulkanAPIHandler->endSingleTimeCommands(layoutCmd);
 
 	depthStencilView.image = offscreenPass.depth.image;
-	if (vkCreateImageView(device, &depthStencilView, nullptr, &offscreenPass.depth.view) != VK_SUCCESS) {
-		throw std::runtime_error("failed to create offscreen depth image view");
-	}
+	vulkanAPIHandler->createImageView(depthStencilView, offscreenPass.depth.view);
 
 	VkImageView attachments[2];
 	attachments[0] = offscreenPass.color.view;
@@ -484,6 +434,33 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 
 	// Update view matrix via push constant
 	glm::mat4 viewMatrix = glm::mat4();
+	glm::vec3 lightPosition = sceneUBO.lightPositions[0];
+	// LookAt wont render if you are looking through an axis, probably due to gimbal lock so we have to do a small offset
+	lightPosition -= glm::vec3(0, 0, 1);
+	glm::vec3 originalLightPosition = sceneUBO.lightPositions[0];
+	
+	switch (faceIndex) {
+	case 0: // POSITIVE_X
+		viewMatrix = glm::lookAt(lightPosition, originalLightPosition + glm::vec3(100, 0, 0), glm::vec3(0, 1, 0));
+		break;
+	case 1:	// NEGATIVE_X
+		viewMatrix = glm::lookAt(lightPosition, originalLightPosition - glm::vec3(100, 0, 0), glm::vec3(0, 1, 0));
+		break;
+	case 2:	// POSITIVE_Y
+		viewMatrix = glm::lookAt(lightPosition, originalLightPosition + glm::vec3(0, 100, 0), glm::vec3(0, 0, 1));
+		break;
+	case 3:	// NEGATIVE_Y
+		viewMatrix = glm::lookAt(lightPosition, originalLightPosition - glm::vec3(0, 100, 0), glm::vec3(0, 0, -1));
+		break;
+	case 4:	// POSITIVE_Z
+		viewMatrix = glm::lookAt(lightPosition, originalLightPosition + glm::vec3(0, 0, 100), glm::vec3(0, 1, 0));
+		break;
+	case 5:	// NEGATIVE_Z
+		viewMatrix = glm::lookAt(lightPosition, originalLightPosition - glm::vec3(0, 0, 100), glm::vec3(0, 1, 0));
+		break;
+	} 
+	
+	/*
 	switch (faceIndex) {
 	case 0: // POSITIVE_X
 		viewMatrix = glm::rotate(viewMatrix, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
@@ -505,7 +482,7 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 	case 5:	// NEGATIVE_Z
 		viewMatrix = glm::rotate(viewMatrix, glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 		break;
-	}
+	} */
 
 	// Render scene from cube face's point of view
 	vkCmdBeginRenderPass(offscreenPass.commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -520,10 +497,10 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 		sizeof(glm::mat4),
 		&viewMatrix);
 
-	// Binding buffers for renderables
+	// Binding buffers 
 	vkCmdBindPipeline(offscreenPass.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipeline);
 	vkCmdBindDescriptorSets(offscreenPass.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipelineLayout, SCENE_UBO, 1, &descriptorSet, 0, nullptr);
-
+	
 	VkDeviceSize offsets[] = { 0 };
 	for (auto& renderable : renderableObjects) {
 		VkBuffer currentVertexBuffer[] = { renderable.second->getVertexBuffer() };
@@ -534,7 +511,7 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 		vkCmdBindDescriptorSets(offscreenPass.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipelineLayout, RENDERABLE_UBO, 1, &currentDescriptorSet, 0, nullptr);
 
 		vkCmdDrawIndexed(offscreenPass.commandBuffer, renderable.second->numIndices(), 1, 0, 0, 0);
-	}
+	} 
 
 	vkCmdEndRenderPass(offscreenPass.commandBuffer);
 	// Make sure color writes to the framebuffer are finished before using it as transfer source
@@ -636,6 +613,7 @@ void Scene::createOffscreenPipelineLayout() {
 	pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 	pushConstantRange.size = sizeof(glm::mat4);
 	pushConstantRange.offset = 0;
+	
 	pipelineLayoutInfo.pushConstantRangeCount = 1;
 	pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -646,7 +624,6 @@ void Scene::createOffscreenPipelineLayout() {
 
 void Scene::prepareOffscreenRenderpass() {
 	VkAttachmentDescription osAttachments[2] = {};
-
 	osAttachments[0].format = OFFSCREEN_FB_COLOR_FORMAT;
 	osAttachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
 	osAttachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;

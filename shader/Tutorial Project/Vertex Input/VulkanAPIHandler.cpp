@@ -17,33 +17,30 @@ void VulkanAPIHandler::drawFrame() {
 	uint32_t imageIndex;
 	vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
 	
-	// Offscreen rendering
 	VkSubmitInfo submitInfo = {};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-	VkSemaphore waitSemaphores[] = { imageAvailableSemaphore };
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-	submitInfo.waitSemaphoreCount = 1;
-	submitInfo.pWaitSemaphores = waitSemaphores;
 	submitInfo.pWaitDstStageMask = waitStages;
+	submitInfo.waitSemaphoreCount = 1;
+	submitInfo.pWaitSemaphores = &imageAvailableSemaphore;
 	submitInfo.commandBufferCount = 1;
-	auto offscreenCommandBuffer = scene->getOffscreenCommandBuffer();
-	submitInfo.pCommandBuffers = &offscreenCommandBuffer;
+	submitInfo.signalSemaphoreCount = 1;
+	submitInfo.pSignalSemaphores = &renderFinishedSemaphore;
 
-	VkSemaphore signalSemaphores[] = { scene->getOffscreenSemaphore() };
-	submitInfo.signalSemaphoreCount = std::size(signalSemaphores);
-	submitInfo.pSignalSemaphores = signalSemaphores;
+	// Offscreen rendering	
+	auto offscreenCommandBuffer = scene->getOffscreenCommandBuffer();
+	auto offscreenSemaphore = scene->getOffscreenSemaphore();
+	submitInfo.pSignalSemaphores = &offscreenSemaphore;
+	submitInfo.pCommandBuffers = &offscreenCommandBuffer;
 
 	if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
 		throw std::runtime_error("failed to submit draw command buffer!");
 	}
 
 	// Scene rendering
-	waitSemaphores[0] = { scene->getOffscreenSemaphore() };
-	submitInfo.pWaitSemaphores = waitSemaphores;
-	
-	signalSemaphores[0] = { renderFinishedSemaphore };
-	submitInfo.pSignalSemaphores = signalSemaphores;
+	submitInfo.pWaitSemaphores = &offscreenSemaphore;
+	submitInfo.pSignalSemaphores = &renderFinishedSemaphore;
 
 	submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
 
@@ -53,13 +50,10 @@ void VulkanAPIHandler::drawFrame() {
 
 	VkPresentInfoKHR presentInfo = {};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-
 	presentInfo.waitSemaphoreCount = 1;
-	presentInfo.pWaitSemaphores = signalSemaphores;
-
-	VkSwapchainKHR swapChains[] = { swapChain };
+	presentInfo.pWaitSemaphores = &renderFinishedSemaphore;
 	presentInfo.swapchainCount = 1;
-	presentInfo.pSwapchains = swapChains;
+	presentInfo.pSwapchains = &swapChain;
 	presentInfo.pImageIndices = &imageIndex;
 	presentInfo.pResults = nullptr; // Optional
 
@@ -68,7 +62,7 @@ void VulkanAPIHandler::drawFrame() {
 
 void VulkanAPIHandler::updateUniformBuffers() {
 	glm::mat4 view = glm::lookAt(glm::vec3(400.f, 400.f, 950.f), glm::vec3(400.0f, -100.0f, 400.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-	glm::mat4 projection = glm::perspective(glm::radians(60.0f), swapChainExtent.width / (float)swapChainExtent.height, 1.5f, 1000.0f);
+	glm::mat4 projection = glm::perspective(glm::radians(60.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 1024.0f);
 	// We are flipping the y coordinate since GLM was originally made for OpenGL
 	projection[1][1] *= -1;
 
@@ -127,13 +121,16 @@ void VulkanAPIHandler::initVulkan() {
 	createTextureSamplers();
 	createVertexIndexBuffers();
 	createUniformBuffers();
-	createDescriptorPool();
 
 	scene->prepareCubeMaps();
 
+	createDescriptorPool();
 	createDescriptorSet();
 	createCommandBuffers();
 	createSemaphores();
+
+	scene->prepareOffscreenFramebuffer();
+	scene->buildOffscreenCommandBuffer();
 }
 
 void VulkanAPIHandler::createInstance() {
@@ -200,8 +197,9 @@ bool VulkanAPIHandler::checkValidationLayerSupport() {
 }
 
 void VulkanAPIHandler::setupDebugCallback() {
-	if (!enableValidationLayers) 
+	if (!enableValidationLayers) {
 		return;
+	}
 
 	VkDebugReportCallbackCreateInfoEXT createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
@@ -402,8 +400,6 @@ void VulkanAPIHandler::createImageViews() {
 }
 
 void VulkanAPIHandler::createRenderPass() {
-	scene->prepareOffscreenRenderpass();
-
 	VkAttachmentDescription colorAttachment = {};
 	colorAttachment.format = swapChainImageFormat;
 	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -465,6 +461,8 @@ void VulkanAPIHandler::createRenderPass() {
 	if (vkCreateRenderPass(device, &renderPassInfo, nullptr, renderPass.replace()) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create render pass!");
 	}
+
+	scene->prepareOffscreenRenderpass();
 }
 
 void VulkanAPIHandler::createDescriptorSetLayout() {
@@ -595,25 +593,24 @@ void VulkanAPIHandler::createGraphicsPipeline() {
 	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 	depthStencil.depthTestEnable = VK_TRUE;
 	depthStencil.depthWriteEnable = VK_TRUE;
-	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 	depthStencil.depthBoundsTestEnable = VK_FALSE;
-	depthStencil.minDepthBounds = 0.0f; // Optional
-	depthStencil.maxDepthBounds = 1.0f; // Optional
+	//depthStencil.minDepthBounds = 0.0f; // Optional
+	//depthStencil.maxDepthBounds = 1.0f; // Optional
 	depthStencil.stencilTestEnable = VK_FALSE;
 	depthStencil.front = {}; // Optional
 	depthStencil.back = {}; // Optional
 
-	/* // Setting up dynamic state
+	/*/ Setting up dynamic state
 	VkDynamicState dynamicStates[] = {
-	VK_DYNAMIC_STATE_VIEWPORT,
-	VK_DYNAMIC_STATE_LINE_WIDTH
+		VK_DYNAMIC_STATE_VIEWPORT,
+		VK_DYNAMIC_STATE_SCISSOR
 	};
 
 	VkPipelineDynamicStateCreateInfo dynamicState = {};
 	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
 	dynamicState.dynamicStateCount = 2;
-	dynamicState.pDynamicStates = dynamicStates;
-	*/
+	dynamicState.pDynamicStates = dynamicStates; */
 
 	// Setting up the pipeline layout. This is where we specify any uniforms we want for the shaders
 	VkDescriptorSetLayout setLayouts[] = { scene->getDescriptorSetLayout(DESC_LAYOUT_RENDERABLE), scene->getDescriptorSetLayout(DESC_LAYOUT_SCENE) };
@@ -639,7 +636,6 @@ void VulkanAPIHandler::createGraphicsPipeline() {
 	pipelineInfo.pViewportState = &viewportState;
 	pipelineInfo.pRasterizationState = &rasterizer;
 	pipelineInfo.pMultisampleState = &multisampling;
-	pipelineInfo.pDepthStencilState = nullptr; // Optional
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = nullptr; // Optional
 	pipelineInfo.layout = pipelineLayout;
@@ -678,8 +674,6 @@ void VulkanAPIHandler::createFramebuffers() {
 			throw std::runtime_error("failed to create framebuffer!");
 		}
 	}
-
-	scene->prepareOffscreenFramebuffer();
 }
 
 void VulkanAPIHandler::createCommandPool() {
@@ -700,7 +694,6 @@ void VulkanAPIHandler::createDepthResources() {
 	createImage(swapChainExtent.width, swapChainExtent.height, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage, depthImageMemory);
 	createImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, depthImageView);
 
-	
 	transitionImageLayout(depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 }
 
@@ -717,7 +710,6 @@ void VulkanAPIHandler::createTextureSamplers() {
 }
 
 void VulkanAPIHandler::createCommandBuffers() {
-	scene->buildOffscreenCommandBuffer();
 	if (commandBuffers.size() > 0) {
 		vkFreeCommandBuffers(device, commandPool, commandBuffers.size(), commandBuffers.data());
 	}
@@ -733,8 +725,6 @@ void VulkanAPIHandler::createCommandBuffers() {
 	if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
 		throw std::runtime_error("failed to allocate command buffers!");
 	}
-
-
 
 	for (size_t i = 0; i < commandBuffers.size(); i++) {
 		VkCommandBufferBeginInfo beginInfo = {};
@@ -921,6 +911,18 @@ void VulkanAPIHandler::createImageView(VkImage image, VkFormat format, VkImageAs
 	}
 }
 
+void VulkanAPIHandler::createImageView(VkImageViewCreateInfo viewInfo, VDeleter<VkImageView>& imageView) {
+	if (vkCreateImageView(device, &viewInfo, nullptr, imageView.replace()) != VK_SUCCESS) {
+		throw std::runtime_error("failed to create texture image view!");
+	}
+}
+
+void VulkanAPIHandler::createImageView(VkImageViewCreateInfo viewInfo, VkImageView& imageView) {
+	if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+		throw std::runtime_error("failed to create texture image view!");
+	}
+}
+
 VkFormat VulkanAPIHandler::findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
 	for (VkFormat format : candidates) {
 		VkFormatProperties props;
@@ -1032,7 +1034,6 @@ void VulkanAPIHandler::transitionImageLayoutCore(VkImage image, VkFormat format,
 	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.image = image;
-	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
 	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	barrier.subresourceRange.baseMipLevel = 0;
 	barrier.subresourceRange.levelCount = 1;
@@ -1059,7 +1060,6 @@ void VulkanAPIHandler::transitionImageLayoutCore(VkImage image, VkFormat format,
 		barrier.srcAccessMask = 0;
 	}
 	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
-		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 		barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 	}
 	else if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&  newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
@@ -1087,7 +1087,7 @@ void VulkanAPIHandler::transitionImageLayoutCore(VkImage image, VkFormat format,
 	}
 	else if (newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
 		if (barrier.srcAccessMask == 0) {
-			barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+			//barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
 		}
 		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 	}
@@ -1097,7 +1097,7 @@ void VulkanAPIHandler::transitionImageLayoutCore(VkImage image, VkFormat format,
 
 	vkCmdPipelineBarrier(
 		commandBuffer,
-		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
 		0,
 		0, nullptr,
 		0, nullptr,
@@ -1246,6 +1246,46 @@ void VulkanAPIHandler::createImage(uint32_t width, uint32_t height,
 	vkBindImageMemory(device, image, imageMemory, 0);
 }
 
+void VulkanAPIHandler::createImage(VkImageCreateInfo imageInfo, VkMemoryPropertyFlags properties, VDeleter<VkImage>& image, VDeleter<VkDeviceMemory>& imageMemory) {
+	if (vkCreateImage(device, &imageInfo, nullptr, image.replace()) != VK_SUCCESS) {
+		throw std::runtime_error("failed to create image!");
+	}
+
+	VkMemoryRequirements memRequirements;
+	vkGetImageMemoryRequirements(device, image, &memRequirements);
+
+	VkMemoryAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memRequirements.size;
+	allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
+
+	if (vkAllocateMemory(device, &allocInfo, nullptr, imageMemory.replace()) != VK_SUCCESS) {
+		throw std::runtime_error("failed to allocate image memory!");
+	}
+
+	vkBindImageMemory(device, image, imageMemory, 0);
+}
+
+void VulkanAPIHandler::createImage(VkImageCreateInfo imageInfo, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory) {
+	if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
+		throw std::runtime_error("failed to create image!");
+	}
+
+	VkMemoryRequirements memRequirements;
+	vkGetImageMemoryRequirements(device, image, &memRequirements);
+
+	VkMemoryAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memRequirements.size;
+	allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
+
+	if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
+		throw std::runtime_error("failed to allocate image memory!");
+	}
+
+	vkBindImageMemory(device, image, imageMemory, 0);
+}
+
 VkSurfaceFormatKHR VulkanAPIHandler::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
 	if (availableFormats.size() == 1 && availableFormats[0].format == VK_FORMAT_UNDEFINED) {
 		return{ VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
@@ -1295,7 +1335,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanAPIHandler::debugCallback(
 	const char* layerPrefix, 
 	const char* msg, 
 	void* userData) {
-	std::cerr << "validation layer: " << msg << std::endl;
+	std::cerr << "Validation layer(" << layerPrefix << "): " << msg << std::endl;
 
 	return VK_FALSE;
 }
