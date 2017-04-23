@@ -9,6 +9,11 @@ Scene::Scene(VulkanAPIHandler* vulkanAPI) {
 	sceneUBO.lightColors[0] = glm::vec4(1, 1, 1, 1);
 
 	frameBufferDepthFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
+
+	// Offscreen matrix
+	// The projectionMatrix HAS to have a fov of M_PI / 2  (90 degrees). Any other FoV value distorts the map
+	sceneUBO.projectionMatrix = glm::perspective(glm::radians(90.0f), 1.0f, Z_NEAR, Z_FAR);
+	sceneUBO.projectionMatrix[1][1] *= -1;
 }
 
 Scene::~Scene() {
@@ -23,6 +28,7 @@ Scene::~Scene() {
 	vkDestroyImage(device, offscreenPass.depth.image, nullptr);
 	vkFreeMemory(device, offscreenPass.depth.memory, nullptr);
 
+	// Cleaning up the framebuffer, renderpass and semaphore
 	vkDestroyFramebuffer(device, offscreenPass.frameBuffer, nullptr);
 	vkDestroyRenderPass(device, offscreenPass.renderPass, nullptr);
 
@@ -45,14 +51,6 @@ void Scene::updateUniformBuffers(glm::mat4 projectionMatrix, glm::mat4 viewMatri
 	for (auto& renderable : renderableObjects) {
 		renderable.second->updateUniformBuffer(projectionMatrix, viewMatrix);
 	}
-
-	// Offscreen matrices
-	// The projectionMatrix HAS to have a fov of M_PI / 2, 90 degrees. Any other FoV value distorts the map
-	sceneUBO.projectionMatrix = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, 1028.f);
-	sceneUBO.projectionMatrix[1][1] *= -1;
-	glm::vec3 lightPosition = sceneUBO.lightPositions[0];
-	sceneUBO.shadowViewMatrix = glm::lookAt(lightPosition, lightPosition - glm::vec3(0, 0, 1), glm::vec3(0, 1, 0));
-	sceneUBO.modelMatrix = glm::translate(glm::mat4(), -lightPosition);
 
 	void* data;
 	vkMapMemory(device, uniformStagingBufferMemory, 0, sizeof(sceneUBO), 0, &data);
@@ -119,8 +117,17 @@ void Scene::createUniformBuffers() {
 
 	VkDeviceSize bufferSize = sizeof(SceneUBO);
 
-	vulkanAPIHandler->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformStagingBuffer, uniformStagingBufferMemory);
-	vulkanAPIHandler->createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, uniformBuffer, uniformBufferMemory);
+	vulkanAPIHandler->createBuffer(bufferSize, 
+								   VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+								   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+								   uniformStagingBuffer, 
+								   uniformStagingBufferMemory);
+
+	vulkanAPIHandler->createBuffer(bufferSize, 
+								   VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
+								   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
+								   uniformBuffer, 
+								   uniformBufferMemory);
 }
 
 void Scene::createDescriptorSetLayouts() {
@@ -207,7 +214,7 @@ void Scene::createRenderables() {
 	// This is where we initialise all of the renderables
 	renderableObjects.emplace_back(std::make_pair(RENDERABLE_MAZE, std::make_shared<RenderableMaze>(vulkanAPIHandler, glm::vec4(0, 0, 0, 1))));
 	
-	// TODO: Possibly just have the pointers class local first as they can then be placed in different vectors which is convenient for categorisation purposes.
+	// TODO: Could possibly just have the pointers outside of the containers as they can then be placed in different vectors which is convenient for categorisation purposes.
 	renderableObjects.emplace_back(
 		std::make_pair(
 			RENDERABLE_PACMAN, 
@@ -260,7 +267,6 @@ void Scene::createRenderables() {
 }
 
 // Based on https://github.com/SaschaWillems/Vulkan/blob/master/shadowmappingomni/shadowmappingomni.cpp
-// Contains a lot of code duplication from VulkanAPIHandler so refactoring the code here to use the VulkanAPIHandler would be nice, but not a priority yet
 void Scene::prepareCubeMaps() {
 	// 32 bit float format for higher precision
 	VkFormat format = OFFSCREEN_FB_COLOR_FORMAT;
@@ -286,7 +292,7 @@ void Scene::prepareCubeMaps() {
 	// Create cube map image
 	vulkanAPIHandler->createImage(imageCreateInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowCubeMapImage, shadowCubeMapMemory);
 
-	// Image barrier for optimal image (target)	
+	// Image barrier for optimal image (target). The cube map has 6 array layers, one for each face
 	vulkanAPIHandler->transitionImageLayout(layoutCmd, shadowCubeMapImage, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
 
 	// Flush command buffer
@@ -440,6 +446,8 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 	glm::mat4 viewMatrix = glm::mat4();
 	glm::vec3 lightPosition = sceneUBO.lightPositions[0];
 	
+	// Cube map faces generally have to use -y as their up axis. http://stackoverflow.com/questions/11685608/convention-of-faces-in-opengl-cubemapping
+	// The math is also inverted due to this.
 	switch (faceIndex) {
 	case 0: // POSITIVE_X 
 		viewMatrix = glm::lookAt(lightPosition, lightPosition - glm::vec3(1, 0, 0), glm::vec3(0, -1, 0));
@@ -460,45 +468,20 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 		viewMatrix = glm::lookAt(lightPosition, lightPosition + glm::vec3(0, 0, 1), glm::vec3(0, -1, 0));
 		break;
 	} 
-	
-	/*
-	switch (faceIndex) {
-	case 0: // POSITIVE_X
-		viewMatrix = glm::rotate(viewMatrix, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-		viewMatrix = glm::rotate(viewMatrix, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-		break;
-	case 1:	// NEGATIVE_X
-		viewMatrix = glm::rotate(viewMatrix, glm::radians(-90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-		viewMatrix = glm::rotate(viewMatrix, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-		break;
-	case 2:	// POSITIVE_Y
-		viewMatrix = glm::rotate(viewMatrix, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-		break;
-	case 3:	// NEGATIVE_Y
-		viewMatrix = glm::rotate(viewMatrix, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-		break;
-	case 4:	// POSITIVE_Z
-		viewMatrix = glm::rotate(viewMatrix, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-		break;
-	case 5:	// NEGATIVE_Z
-		viewMatrix = glm::rotate(viewMatrix, glm::radians(180.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-		break;
-	} */
 
 	// Render scene from cube face's point of view
 	vkCmdBeginRenderPass(offscreenPass.commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
 	// Update shader push constant block
 	// Contains current face view matrix
-	vkCmdPushConstants(
-		offscreenPass.commandBuffer,
-		offscreenPipelineLayout,
-		VK_SHADER_STAGE_VERTEX_BIT,
-		0,
-		sizeof(glm::mat4),
-		&viewMatrix);
+	vkCmdPushConstants(offscreenPass.commandBuffer,
+					   offscreenPipelineLayout,
+					   VK_SHADER_STAGE_VERTEX_BIT,
+					   0,
+					   sizeof(glm::mat4),
+					   &viewMatrix);
 
-	// Binding buffers 
+	// Binding buffers and issuing draw calls per renderable
 	vkCmdBindPipeline(offscreenPass.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipeline);
 	vkCmdBindDescriptorSets(offscreenPass.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipelineLayout, SCENE_UBO, 1, &descriptorSet, 0, nullptr);
 	
@@ -518,7 +501,7 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 	// Make sure color writes to the framebuffer are finished before using it as transfer source
 	vulkanAPIHandler->transitionImageLayout(offscreenPass.commandBuffer, offscreenPass.color.image, OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
-	// Copy region for transfer from framebuffer to cube face
+	// Copy region for the transfer from framebuffer to cube face
 	VkImageCopy copyRegion = {};
 
 	copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -536,15 +519,15 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 	copyRegion.extent.width = CUBE_MAP_TEX_DIM;
 	copyRegion.extent.height = CUBE_MAP_TEX_DIM;
 	copyRegion.extent.depth = 1;
+	
 	// Put image copy into command buffer
-	vkCmdCopyImage(
-		offscreenPass.commandBuffer,
-		offscreenPass.color.image,
-		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		shadowCubeMapImage,
-		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		1,
-		&copyRegion);
+	vkCmdCopyImage(offscreenPass.commandBuffer,
+				   offscreenPass.color.image,
+				   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+				   shadowCubeMapImage,
+				   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+				   1,
+				   &copyRegion);
 
 	// Transform framebuffer color attachment back 
 	vulkanAPIHandler->transitionImageLayout(offscreenPass.commandBuffer, offscreenPass.color.image, OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
@@ -557,7 +540,7 @@ void Scene::buildOffscreenCommandBuffer() {
 	}
 	
 	if (offscreenPass.semaphore == VK_NULL_HANDLE) {
-		// Create a semaphore used to synchronize offscreen rendering and usage
+		// The semaphore is used to synchronize offscreen rendering. This happens before the color/main rendering
 		VkSemaphoreCreateInfo semaphoreCreateInfo = {};
 		semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 		
@@ -572,20 +555,6 @@ void Scene::buildOffscreenCommandBuffer() {
 	if (vkBeginCommandBuffer(offscreenPass.commandBuffer, &cmdBufInfo) != VK_SUCCESS) {
 		throw std::runtime_error("failed to begin offscreen command buffer");
 	}
-
-	VkViewport viewport = {};
-	viewport.width = (float)offscreenPass.width;
-	viewport.height = (float)offscreenPass.height;
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
-	vkCmdSetViewport(offscreenPass.commandBuffer, 0, 1, &viewport);
-
-	VkRect2D scissor = {};
-	scissor.extent.width = offscreenPass.width;
-	scissor.extent.height = offscreenPass.height;
-	scissor.offset.x = 0;
-	scissor.offset.y = 0;
-	vkCmdSetScissor(offscreenPass.commandBuffer, 0, 1, &scissor);
 
 	// Change image layout for all cubemap faces to transfer destination
 	vulkanAPIHandler->transitionImageLayout(offscreenPass.commandBuffer, shadowCubeMapImage, OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6);
@@ -624,6 +593,7 @@ void Scene::createOffscreenPipelineLayout() {
 }
 
 void Scene::prepareOffscreenRenderpass() {
+	// Color attachment
 	VkAttachmentDescription osAttachments[2] = {};
 	osAttachments[0].format = OFFSCREEN_FB_COLOR_FORMAT;
 	osAttachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
@@ -694,7 +664,7 @@ void Scene::prepareOffscreenPipeline(VkGraphicsPipelineCreateInfo pipelineInfo) 
 
 	VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
-	// Setting up offscreen viewports and scissors. These HAVE to be the dimensions of the texture, otherwise everything breaks!
+	// Setting up offscreen viewports and scissors. These HAVE to be the dimensions of the texture, otherwise the shadow map breaks!
 	VkViewport viewport = {};
 	viewport.x = 0.0f;
 	viewport.y = 0.0f;
@@ -720,6 +690,7 @@ void Scene::prepareOffscreenPipeline(VkGraphicsPipelineCreateInfo pipelineInfo) 
 	pipelineInfo.layout = offscreenPipelineLayout;
 	pipelineInfo.renderPass = offscreenPass.renderPass;
 	pipelineInfo.pViewportState = &viewportState;
+
 	if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, offscreenPipeline.replace()) != VK_SUCCESS) {
 		throw std::runtime_error("failed to create offscreen pipeline!");
 	}

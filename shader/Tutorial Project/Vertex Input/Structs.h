@@ -22,8 +22,6 @@ struct RenderableMaterialUBO {
 
 struct SceneUBO {
 	glm::mat4 projectionMatrix;
-	glm::mat4 shadowViewMatrix;
-	glm::mat4 modelMatrix;
 	glm::vec4 lightPositions[NUM_LIGHTS];
 	glm::vec4 lightColors[NUM_LIGHTS];
 };
@@ -87,8 +85,6 @@ struct OffscreenPass {
 	VkFramebuffer frameBuffer;
 	FrameBufferAttachment color, depth;
 	VkRenderPass renderPass;
-	VkSampler sampler;
-	VkDescriptorImageInfo descriptor;
 	VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
 	// Semaphore used to synchronize between offscreen and final scene render pass
 	VkSemaphore semaphore = VK_NULL_HANDLE;

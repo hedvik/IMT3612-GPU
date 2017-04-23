@@ -14,8 +14,6 @@ layout(set = RENDERABLE_UBO, binding = 0) uniform RenderableUBO {
 
 layout(set = SCENE_UBO, binding = 0) uniform SceneUBO {
 	mat4 ProjectionMatrix;
-	mat4 ShadowViewMatrix;
-	mat4 ModelMatrix;
 	vec4 lightPositions_worldspace[NUM_LIGHTS];
 	vec4 lightColors[NUM_LIGHTS];
 } sceneUBO;

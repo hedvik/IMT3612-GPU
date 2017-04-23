@@ -5,6 +5,8 @@
 #define BINDING_SAMPLER       1
 #define BINDING_MATERIAL      2
 #define NUM_LIGHTS                4
+#define EPSILON                       0.15
+#define SHADOW_OPACITY       0.5
 
 layout(set = RENDERABLE_UBO, binding = BINDING_SAMPLER) uniform sampler2D textureSampler;
 layout(set = SCENE_UBO, binding = BINDING_SAMPLER) uniform samplerCube shadowSampler;
@@ -90,12 +92,11 @@ void main() {
 	}
 	
 	// Shadow
-	// Direction of the light (from the fragment to the light)
 	vec4 lightDirection = lightPosition_worldspace - vertexPosition_worldspace;
 	float sampledDistance = texture(shadowSampler, lightDirection.xyz).r;
 	float distance = length(lightDirection);
 	
-	float shadow = (distance <= sampledDistance + 0.15) ? 1.0 : 0.5;
+	float shadow = (distance <= sampledDistance + EPSILON) ? 1.0 : SHADOW_OPACITY;
 	outColor.rgb *= shadow;
 }
 
