@@ -6,6 +6,9 @@ Scene::Scene(VulkanAPIHandler* vulkanAPI) {
 	device = vulkanAPIHandler->getDevice();
 
 	sceneUBO.lightPositions[0] = glm::vec4(410, 100, 410, 1.0);
+	sceneUBO.lightPositions[1] = spawnPositions[1];
+	sceneUBO.lightPositions[2] = spawnPositions[2];
+	sceneUBO.lightPositions[3] = spawnPositions[3];
 	sceneUBO.lightColors[0] = glm::vec4(1, 1, 1, 1);
 
 	frameBufferDepthFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
@@ -14,6 +17,13 @@ Scene::Scene(VulkanAPIHandler* vulkanAPI) {
 	// The projectionMatrix HAS to have a fov of M_PI / 2  (90 degrees). Any other FoV value distorts the map
 	sceneUBO.projectionMatrix = glm::perspective(glm::radians(90.0f), 1.0f, Z_NEAR, Z_FAR);
 	sceneUBO.projectionMatrix[1][1] *= -1;
+
+	for (int i = 0; i < NUM_LIGHTS; i++) {
+		shadowCubeMapImages.emplace_back(VDeleter<VkImage>{ device, vkDestroyImage });
+		shadowCubeMapImageViews.emplace_back(VDeleter<VkImageView>{ device, vkDestroyImageView });
+		shadowCubeMapSamplers.emplace_back(VDeleter<VkSampler>{ device, vkDestroySampler });
+		shadowCubeMapMemories.emplace_back(VDeleter<VkDeviceMemory>{ device, vkFreeMemory });
+	}
 }
 
 Scene::~Scene() {
@@ -43,7 +53,7 @@ VkCommandBuffer Scene::getOffscreenCommandBuffer() {
 	return offscreenPass.commandBuffer;
 }
 
-std::vector<std::pair<RenderableTypes, std::shared_ptr<Renderable>>> Scene::getRenderableObjects() {
+std::vector<std::pair<bool, std::shared_ptr<Renderable>>> Scene::getRenderableObjects() {
 	return renderableObjects;
 }
 
@@ -66,24 +76,19 @@ void Scene::update(float deltaTime) {
 	}
 
 	// For each ghost, check if it collides with pacman. There is probably a better way of doing this
-	for (auto& ghost : renderableObjects) {
-		if (ghost.first == RENDERABLE_GHOST) {
-			if (CollisionHandler::checkCollision(std::dynamic_pointer_cast<Ghost>(ghost.second)->getCollisionRect(), 
-												 std::dynamic_pointer_cast<Pacman>(renderableObjects[pacmanIndex].second)->getCollisionRect())) {
-				std::random_device rd;
-				std::mt19937 gen(rd());
-				std::uniform_int_distribution<> dis(0, 3);
+	for (auto& ghost : ghosts) {
+		if (CollisionHandler::checkCollision(ghost->getCollisionRect(),  pacman->getCollisionRect())) {
+			std::random_device rd;
+			std::mt19937 gen(rd());
+			std::uniform_int_distribution<> dis(0, 3);
 
-				std::dynamic_pointer_cast<Ghost>(ghost.second)->respawn(spawnPositions[dis(gen)]);
-			}
+			ghost->respawn(spawnPositions[dis(gen)]);
 		}
 	}
-
 }
 
 void Scene::handleInput(GLFWKeyEvent event) {
-	// Another alternative would be to just make handleInput virtual. Might be better if you want to control ghosts in some way too
-	std::dynamic_pointer_cast<Pacman>(renderableObjects[pacmanIndex].second)->handleInput(event);
+	pacman->handleInput(event);
 }
 
 void Scene::createTextureImages() {
@@ -145,9 +150,9 @@ void Scene::createDescriptorSetLayouts() {
 	VkDescriptorSetLayoutBinding cubeMapLayoutBinding = {};
 	cubeMapLayoutBinding.binding = 1;
 	cubeMapLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	cubeMapLayoutBinding.descriptorCount = 1;
+	cubeMapLayoutBinding.descriptorCount = NUM_LIGHTS;
 	cubeMapLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
+	
 	std::array<VkDescriptorSetLayoutBinding, 2> layoutBindings = { uboLayoutBinding, cubeMapLayoutBinding };
 	VkDescriptorSetLayoutCreateInfo layoutInfo = {};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -184,10 +189,16 @@ void Scene::createDescriptorSets(VkDescriptorPool descPool) {
 	bufferInfo.offset = 0;
 	bufferInfo.range = sizeof(SceneUBO);
 
-	VkDescriptorImageInfo cubeMapInfo = {};
-	cubeMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	cubeMapInfo.imageView = shadowCubeMapImageView;
-	cubeMapInfo.sampler = shadowCubeMapSampler;
+	std::array<VkDescriptorImageInfo, NUM_LIGHTS> cubeMapInfo = {};
+	cubeMapInfo[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	cubeMapInfo[0].imageView = shadowCubeMapImageViews[0];
+	cubeMapInfo[0].sampler = shadowCubeMapSamplers[0];
+	
+	for (int i = 1; i < NUM_LIGHTS; i++) {
+		cubeMapInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		cubeMapInfo[i].imageView = shadowCubeMapImageViews[i];
+		cubeMapInfo[i].sampler = shadowCubeMapSamplers[i];
+	} 
 
 	std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
 
@@ -204,66 +215,27 @@ void Scene::createDescriptorSets(VkDescriptorPool descPool) {
 	descriptorWrites[1].dstBinding = 1;
 	descriptorWrites[1].dstArrayElement = 0;
 	descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	descriptorWrites[1].descriptorCount = 1;
-	descriptorWrites[1].pImageInfo = &cubeMapInfo;
+	descriptorWrites[1].descriptorCount = cubeMapInfo.size();
+	descriptorWrites[1].pImageInfo = cubeMapInfo.data();
 
 	vkUpdateDescriptorSets(device, descriptorWrites.size(), descriptorWrites.data(), 0, nullptr); 
 }
 
 void Scene::createRenderables() {
 	// This is where we initialise all of the renderables
-	renderableObjects.emplace_back(std::make_pair(RENDERABLE_MAZE, std::make_shared<RenderableMaze>(vulkanAPIHandler, glm::vec4(0, 0, 0, 1))));
+	maze = std::make_shared<RenderableMaze>(vulkanAPIHandler, glm::vec4(0, 0, 0, 1));
+	pacman = std::make_shared<Pacman>(maze, vulkanAPIHandler, spawnPositions[0], glm::vec3(30, 30, 30), glm::vec4(1, 1, 0, 1));
 	
-	// TODO: Could possibly just have the pointers outside of the containers as they can then be placed in different vectors which is convenient for categorisation purposes.
-	renderableObjects.emplace_back(
-		std::make_pair(
-			RENDERABLE_PACMAN, 
-			std::make_shared<Pacman>(
-				std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[mazeIndex].second), 
-				vulkanAPIHandler, 
-				spawnPositions[0], 
-				glm::vec3(30, 30, 30), 
-				glm::vec4(1, 1, 0, 1))));
-	
-	
-	renderableObjects.emplace_back(
-		std::make_pair(
-			RENDERABLE_GHOST, 
-			std::make_shared<Ghost>(
-				&sceneUBO, 
-				std::dynamic_pointer_cast<Pacman>(renderableObjects[pacmanIndex].second),
-				std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[mazeIndex].second), 
-				vulkanAPIHandler, 
-				1, 
-				spawnPositions[1], 
-				glm::vec3(30, 30, 30), 
-				glm::vec4(1, 0, 0, 1))));
+	for (int i = 0; i < NUM_GHOSTS; i++) {
+		ghosts.emplace_back(std::make_shared<Ghost>(&sceneUBO, pacman, maze, vulkanAPIHandler, i + 1, spawnPositions[i + 1], glm::vec3(30, 30, 30), ghostColors[i]));
+	}
 
-	renderableObjects.emplace_back(
-		std::make_pair(
-			RENDERABLE_GHOST, 
-			std::make_shared<Ghost>(
-				&sceneUBO,
-				std::dynamic_pointer_cast<Pacman>(renderableObjects[pacmanIndex].second),
-				std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[mazeIndex].second),
-				vulkanAPIHandler,
-				2,
-				spawnPositions[2],
-				glm::vec3(30, 30, 30),
-				glm::vec4(0, 1, 0, 1))));
+	renderableObjects.emplace_back(std::make_pair<bool, std::shared_ptr<Renderable>>(true, maze));
+	renderableObjects.emplace_back(std::make_pair<bool, std::shared_ptr<Renderable>>(true, pacman));
 
-	renderableObjects.emplace_back(
-		std::make_pair(
-			RENDERABLE_GHOST, 
-			std::make_shared<Ghost>(
-				&sceneUBO,
-				std::dynamic_pointer_cast<Pacman>(renderableObjects[pacmanIndex].second),
-				std::dynamic_pointer_cast<RenderableMaze>(renderableObjects[mazeIndex].second),
-				vulkanAPIHandler,
-				3,
-				spawnPositions[3],
-				glm::vec3(30, 30, 30),
-				glm::vec4(0, 0, 1, 1))));
+	for (auto ghost : ghosts) {
+		renderableObjects.emplace_back(std::make_pair<bool, std::shared_ptr<Renderable>>(true, ghost));
+	}
 }
 
 // Based on https://github.com/SaschaWillems/Vulkan/blob/master/shadowmappingomni/shadowmappingomni.cpp
@@ -278,7 +250,7 @@ void Scene::prepareCubeMaps() {
 	imageCreateInfo.format = format;
 	imageCreateInfo.extent = { CUBE_MAP_TEX_DIM, CUBE_MAP_TEX_DIM, 1 };
 	imageCreateInfo.mipLevels = 1;
-	imageCreateInfo.arrayLayers = 6;
+	imageCreateInfo.arrayLayers = NUM_CUBE_FACES;
 	imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 	imageCreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 	imageCreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -289,16 +261,20 @@ void Scene::prepareCubeMaps() {
 	// Setting up and recording the command buffer
 	VkCommandBuffer layoutCmd = vulkanAPIHandler->beginSingleTimeCommands();
 
-	// Create cube map image
-	vulkanAPIHandler->createImage(imageCreateInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowCubeMapImage, shadowCubeMapMemory);
+	// Create cube map images
+	for (int i = 0; i < NUM_LIGHTS; i++) {
+		vulkanAPIHandler->createImage(imageCreateInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowCubeMapImages[i], shadowCubeMapMemories[i]);
+	}
 
 	// Image barrier for optimal image (target). The cube map has 6 array layers, one for each face
-	vulkanAPIHandler->transitionImageLayout(layoutCmd, shadowCubeMapImage, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
+	for (int i = 0; i < NUM_LIGHTS; i++) {
+		vulkanAPIHandler->transitionImageLayout(layoutCmd, shadowCubeMapImages[i], format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, NUM_CUBE_FACES);
+	}
 
 	// Flush command buffer
 	vulkanAPIHandler->endSingleTimeCommands(layoutCmd);
 
-	// Create sampler
+	// Create samplers
 	VkSamplerCreateInfo sampler = {};
 	sampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 	sampler.magFilter = CUBE_MAP_TEX_FILTER;
@@ -308,27 +284,32 @@ void Scene::prepareCubeMaps() {
 	sampler.addressModeV = sampler.addressModeU;
 	sampler.addressModeW = sampler.addressModeU;
 	sampler.mipLodBias = 0.0f;
-	sampler.maxAnisotropy = 0;
+	sampler.maxAnisotropy = 16.f;
+	sampler.anisotropyEnable = VK_TRUE;
 	sampler.compareOp = VK_COMPARE_OP_NEVER;
 	sampler.minLod = 0.0f;
 	sampler.maxLod = 1.0f;
 	sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
 	
-	if (vkCreateSampler(device, &sampler, nullptr, shadowCubeMapSampler.replace()) != VK_SUCCESS) {
-		throw std::runtime_error("Failed to create cubemap sampler");
+	for (int i = 0; i < NUM_LIGHTS; i++) {
+		if (vkCreateSampler(device, &sampler, nullptr, shadowCubeMapSamplers[i].replace()) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create cubemap sampler");
+		}
 	}
 
-	// Create image view
-	VkImageViewCreateInfo view = {};
-	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	view.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
-	view.format = format;
-	view.components = { VK_COMPONENT_SWIZZLE_R };
-	view.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-	view.subresourceRange.layerCount = 6;
-	view.image = shadowCubeMapImage;
-	
-	vulkanAPIHandler->createImageView(view, shadowCubeMapImageView);
+	// Create image views
+	for (int i = 0; i < NUM_LIGHTS; i++) {
+		VkImageViewCreateInfo view = {};
+		view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		view.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+		view.format = format;
+		view.components = { VK_COMPONENT_SWIZZLE_R };
+		view.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+		view.subresourceRange.layerCount = NUM_CUBE_FACES;
+		view.image = shadowCubeMapImages[i];
+
+		vulkanAPIHandler->createImageView(view, shadowCubeMapImageViews[i]);
+	}
 }
 
 // Prepare a new framebuffer for offscreen rendering
@@ -427,7 +408,7 @@ void Scene::prepareOffscreenFramebuffer() {
 // a copy from framebuffer to cube face
 // Uses push constants for quick update of
 // view matrix for the current cube map face
-void Scene::updateCubeFace(uint32_t faceIndex) {
+void Scene::updateCubeFace(uint32_t faceIndex, uint32_t lightIndex) {
 	VkClearValue clearValues[2];
 	clearValues[0].color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
 	clearValues[1].depthStencil = { 1.0f, 0 };
@@ -444,7 +425,7 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 
 	// Update view matrix via push constant
 	glm::mat4 viewMatrix = glm::mat4();
-	glm::vec3 lightPosition = sceneUBO.lightPositions[0];
+	glm::vec3 lightPosition = sceneUBO.lightPositions[lightIndex];
 	
 	// Cube map faces generally have to use -y as their up axis. http://stackoverflow.com/questions/11685608/convention-of-faces-in-opengl-cubemapping
 	// The math is also inverted due to this.
@@ -486,15 +467,18 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 	vkCmdBindDescriptorSets(offscreenPass.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipelineLayout, SCENE_UBO, 1, &descriptorSet, 0, nullptr);
 	
 	VkDeviceSize offsets[] = { 0 };
-	for (auto& renderable : renderableObjects) {
-		VkBuffer currentVertexBuffer[] = { renderable.second->getVertexBuffer() };
-		VkDescriptorSet currentDescriptorSet = renderable.second->getDescriptorSet();
+	for (std::vector<int>::size_type i = 0; i != renderableObjects.size(); i++) {
+		// First contains a bool for if we actually want to render this object
+		if (renderableObjects[i].first) {
+			VkBuffer currentVertexBuffer[] = { renderableObjects[i].second->getVertexBuffer() };
+			VkDescriptorSet currentDescriptorSet = renderableObjects[i].second->getDescriptorSet();
 
-		vkCmdBindVertexBuffers(offscreenPass.commandBuffer, 0, 1, currentVertexBuffer, offsets);
-		vkCmdBindIndexBuffer(offscreenPass.commandBuffer, renderable.second->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
-		vkCmdBindDescriptorSets(offscreenPass.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipelineLayout, RENDERABLE_UBO, 1, &currentDescriptorSet, 0, nullptr);
+			vkCmdBindVertexBuffers(offscreenPass.commandBuffer, 0, 1, currentVertexBuffer, offsets);
+			vkCmdBindIndexBuffer(offscreenPass.commandBuffer, renderableObjects[i].second->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+			vkCmdBindDescriptorSets(offscreenPass.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipelineLayout, RENDERABLE_UBO, 1, &currentDescriptorSet, 0, nullptr);
 
-		vkCmdDrawIndexed(offscreenPass.commandBuffer, renderable.second->numIndices(), 1, 0, 0, 0);
+			vkCmdDrawIndexed(offscreenPass.commandBuffer, renderableObjects[i].second->numIndices(), 1, 0, 0, 0);
+		}
 	} 
 
 	vkCmdEndRenderPass(offscreenPass.commandBuffer);
@@ -524,7 +508,7 @@ void Scene::updateCubeFace(uint32_t faceIndex) {
 	vkCmdCopyImage(offscreenPass.commandBuffer,
 				   offscreenPass.color.image,
 				   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-				   shadowCubeMapImage,
+				   shadowCubeMapImages[lightIndex],
 				   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 				   1,
 				   &copyRegion);
@@ -557,14 +541,29 @@ void Scene::buildOffscreenCommandBuffer() {
 	}
 
 	// Change image layout for all cubemap faces to transfer destination
-	vulkanAPIHandler->transitionImageLayout(offscreenPass.commandBuffer, shadowCubeMapImage, OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6);
+	for (int i = 0; i < NUM_LIGHTS; i++) {
+		vulkanAPIHandler->transitionImageLayout(offscreenPass.commandBuffer, shadowCubeMapImages[i], OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, NUM_CUBE_FACES);
+	}
 
-	for (uint32_t face = 0; face < 6; ++face) {
-		updateCubeFace(face);
+	for (uint32_t i = 0; i < NUM_LIGHTS; i++) {
+		// TODO: Rather ugly and hacky way of telling the program to not render the ghost encasing the light. Would like to refactor this to be more generic
+		if (i > 0) {
+			renderableObjects[INDEX_OFFSET_BEFORE_GHOST + (i - 1)].first = false;
+		}
+		
+		for (uint32_t face = 0; face < NUM_CUBE_FACES; face++) {
+			updateCubeFace(face, i);
+		}
+
+		if (i > 0) {
+			renderableObjects[INDEX_OFFSET_BEFORE_GHOST + (i - 1)].first = true;
+		}
 	}
 
 	// Change image layout for all cubemap faces to shader read after they have been copied
-	vulkanAPIHandler->transitionImageLayout(offscreenPass.commandBuffer, shadowCubeMapImage, OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
+	for (int i = 0; i < NUM_LIGHTS; i++) {
+		vulkanAPIHandler->transitionImageLayout(offscreenPass.commandBuffer, shadowCubeMapImages[i], OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, NUM_CUBE_FACES);
+	}
 
 	if (vkEndCommandBuffer(offscreenPass.commandBuffer) != VK_SUCCESS) {
 		throw std::runtime_error("failed to end offscreen command buffer");

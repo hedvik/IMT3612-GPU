@@ -9,7 +9,7 @@
 #define SHADOW_OPACITY       0.5
 
 layout(set = RENDERABLE_UBO, binding = BINDING_SAMPLER) uniform sampler2D textureSampler;
-layout(set = SCENE_UBO, binding = BINDING_SAMPLER) uniform samplerCube shadowSampler;
+layout(set = SCENE_UBO, binding = BINDING_SAMPLER) uniform samplerCube shadowSampler[NUM_LIGHTS];
 layout(set = RENDERABLE_UBO, binding = BINDING_MATERIAL) uniform RenderableMaterial {
 	float specularExponent;
 	float specularGain;
@@ -92,12 +92,14 @@ void main() {
 	}
 	
 	// Shadow
-	vec4 lightDirection = lightPosition_worldspace - vertexPosition_worldspace;
-	float sampledDistance = texture(shadowSampler, lightDirection.xyz).r;
-	float distance = length(lightDirection);
-	
-	float shadow = (distance <= sampledDistance + EPSILON) ? 1.0 : SHADOW_OPACITY;
-	outColor.rgb *= shadow;
+	for(int i = 0; i < NUM_LIGHTS; i++) {
+		vec4 lightDirection = lightPosition_worldspace - vertexPosition_worldspace;
+		float sampledDistance = texture(shadowSampler[i], lightDirection.xyz).r;
+		float distance = length(lightDirection);
+		
+		float shadow = (distance <= sampledDistance + EPSILON) ? 1.0 : SHADOW_OPACITY;
+		outColor.rgb *= shadow;
+	}
 }
 
 vec4 calculateDiffuseColor(vec4 materialDiffuseColor, vec4 normal, vec4 lightDirection, vec4 lightColor) {

@@ -53,8 +53,7 @@ public:
 	void createDescriptorSetLayout();
 	void createDescriptorSet(VkDescriptorPool descriptorPool);
 protected:
-	Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texturePath);
-
+	VDeleter<VkDevice> device;
 	VulkanAPIHandler* vulkanAPIHandler;
 	
 	std::vector<Vertex> vertices{};
@@ -66,8 +65,9 @@ protected:
 	glm::vec4 baseColor{1.f, 1.f, 1.f, 1.f};
 
 	RenderableMaterialUBO material{};
+
+	Renderable(VulkanAPIHandler* vkAPIHandler, glm::vec4 pos, std::string texturePath);
 private:
-	VDeleter<VkDevice> device;
 	VkDescriptorSet descriptorSet;
 
 	std::string texturePath{DEFAULT_TEXTURE_PATH};

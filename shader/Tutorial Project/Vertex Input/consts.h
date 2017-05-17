@@ -6,6 +6,11 @@ const int NUM_VERTEX_ATTRIBUTES = 4;
 const int NUM_ATTACHMENTS = 2;
 
 const int NUM_LIGHTS = 4;
+const int NUM_GHOSTS = 3;
+
+const int NUM_CUBE_FACES = 6;
+
+const int INDEX_OFFSET_BEFORE_GHOST = 2;
 
 const float Z_NEAR = 0.1f;
 const float Z_FAR = 1024.f;

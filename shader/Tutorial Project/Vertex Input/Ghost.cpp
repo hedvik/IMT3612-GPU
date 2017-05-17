@@ -1,4 +1,5 @@
 #include "Ghost.h"
+#include "VulkanAPIHandler.h"
 
 Ghost::Ghost(SceneUBO* uboPtr,
 			 std::shared_ptr<Pacman> pacPtr,

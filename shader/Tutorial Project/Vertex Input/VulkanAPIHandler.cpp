@@ -284,7 +284,8 @@ void VulkanAPIHandler::createLogicalDevice() {
 	}
 
 	// This is where we specify that we want features like geometry shaders etc. 
-	VkPhysicalDeviceFeatures deviceFeatures = {};
+	VkPhysicalDeviceFeatures deviceFeatures = { };
+	deviceFeatures.samplerAnisotropy = VK_TRUE;
 
 	// Setting up device and queue info
 	VkDeviceCreateInfo createInfo = {};
@@ -792,7 +793,7 @@ void VulkanAPIHandler::createDescriptorPool() {
 	
 	// Texture sampler, used for shadow cube map as well
 	poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	poolSizes[1].descriptorCount = scene->getRenderableObjects().size() + 1;
+	poolSizes[1].descriptorCount = scene->getRenderableObjects().size() + NUM_LIGHTS;
 	
 	// Material buffer
 	poolSizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
