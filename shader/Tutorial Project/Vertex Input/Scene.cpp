@@ -53,13 +53,17 @@ VkCommandBuffer Scene::getOffscreenCommandBuffer() {
 	return offscreenPass.commandBuffer;
 }
 
-std::vector<std::pair<bool, std::shared_ptr<Renderable>>> Scene::getRenderableObjects() {
+std::vector<std::pair<RenderableInformation, std::shared_ptr<Renderable>>> Scene::getRenderableObjects() {
 	return renderableObjects;
 }
 
 void Scene::updateUniformBuffers(glm::mat4 projectionMatrix, glm::mat4 viewMatrix) {
 	for (auto& renderable : renderableObjects) {
 		renderable.second->updateUniformBuffer(projectionMatrix, viewMatrix);
+	}
+
+	for (int i = 0; i < shadowCubeMapImages.size(); i++) {
+		sceneUBO.lightOffsetMatrices[i] = glm::translate(glm::mat4(1.f), glm::vec3(-sceneUBO.lightPositions[i].x, -sceneUBO.lightPositions[i].y, -sceneUBO.lightPositions[i].z));
 	}
 
 	void* data;
@@ -75,7 +79,7 @@ void Scene::update(float deltaTime) {
 		renderable.second->update(deltaTime);
 	}
 
-	// For each ghost, check if it collides with pacman. There is probably a better way of doing this
+	// For each ghost, check if it collides with pacman. 
 	for (auto& ghost : ghosts) {
 		if (CollisionHandler::checkCollision(ghost->getCollisionRect(),  pacman->getCollisionRect())) {
 			std::random_device rd;
@@ -150,7 +154,7 @@ void Scene::createDescriptorSetLayouts() {
 	VkDescriptorSetLayoutBinding cubeMapLayoutBinding = {};
 	cubeMapLayoutBinding.binding = 1;
 	cubeMapLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	cubeMapLayoutBinding.descriptorCount = NUM_LIGHTS;
+	cubeMapLayoutBinding.descriptorCount = shadowCubeMapImages.size();
 	cubeMapLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 	
 	std::array<VkDescriptorSetLayoutBinding, 2> layoutBindings = { uboLayoutBinding, cubeMapLayoutBinding };
@@ -194,7 +198,7 @@ void Scene::createDescriptorSets(VkDescriptorPool descPool) {
 	cubeMapInfo[0].imageView = shadowCubeMapImageViews[0];
 	cubeMapInfo[0].sampler = shadowCubeMapSamplers[0];
 	
-	for (int i = 1; i < NUM_LIGHTS; i++) {
+	for (int i = 1; i < shadowCubeMapImages.size(); i++) {
 		cubeMapInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		cubeMapInfo[i].imageView = shadowCubeMapImageViews[i];
 		cubeMapInfo[i].sampler = shadowCubeMapSamplers[i];
@@ -230,11 +234,11 @@ void Scene::createRenderables() {
 		ghosts.emplace_back(std::make_shared<Ghost>(&sceneUBO, pacman, maze, vulkanAPIHandler, i + 1, spawnPositions[i + 1], glm::vec3(30, 30, 30), ghostColors[i]));
 	}
 
-	renderableObjects.emplace_back(std::make_pair<bool, std::shared_ptr<Renderable>>(true, maze));
-	renderableObjects.emplace_back(std::make_pair<bool, std::shared_ptr<Renderable>>(true, pacman));
+	renderableObjects.emplace_back(std::make_pair<RenderableInformation, std::shared_ptr<Renderable>>(RenderableInformation(RENDERABLE_MAZE), maze));
+	renderableObjects.emplace_back(std::make_pair<RenderableInformation, std::shared_ptr<Renderable>>(RenderableInformation(RENDERABLE_PACMAN), pacman));
 
-	for (auto ghost : ghosts) {
-		renderableObjects.emplace_back(std::make_pair<bool, std::shared_ptr<Renderable>>(true, ghost));
+	for (auto& ghost : ghosts) {
+		renderableObjects.emplace_back(std::make_pair<RenderableInformation, std::shared_ptr<Renderable>>(RenderableInformation(RENDERABLE_GHOST, false), ghost));
 	}
 }
 
@@ -262,12 +266,12 @@ void Scene::prepareCubeMaps() {
 	VkCommandBuffer layoutCmd = vulkanAPIHandler->beginSingleTimeCommands();
 
 	// Create cube map images
-	for (int i = 0; i < NUM_LIGHTS; i++) {
+	for (int i = 0; i < shadowCubeMapImages.size(); i++) {
 		vulkanAPIHandler->createImage(imageCreateInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowCubeMapImages[i], shadowCubeMapMemories[i]);
 	}
 
 	// Image barrier for optimal image (target). The cube map has 6 array layers, one for each face
-	for (int i = 0; i < NUM_LIGHTS; i++) {
+	for (int i = 0; i < shadowCubeMapImages.size(); i++) {
 		vulkanAPIHandler->transitionImageLayout(layoutCmd, shadowCubeMapImages[i], format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, NUM_CUBE_FACES);
 	}
 
@@ -291,14 +295,14 @@ void Scene::prepareCubeMaps() {
 	sampler.maxLod = 1.0f;
 	sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
 	
-	for (int i = 0; i < NUM_LIGHTS; i++) {
+	for (int i = 0; i < shadowCubeMapImages.size(); i++) {
 		if (vkCreateSampler(device, &sampler, nullptr, shadowCubeMapSamplers[i].replace()) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create cubemap sampler");
 		}
 	}
 
 	// Create image views
-	for (int i = 0; i < NUM_LIGHTS; i++) {
+	for (int i = 0; i < shadowCubeMapImages.size(); i++) {
 		VkImageViewCreateInfo view = {};
 		view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		view.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
@@ -425,7 +429,7 @@ void Scene::updateCubeFace(uint32_t faceIndex, uint32_t lightIndex) {
 
 	// Update view matrix via push constant
 	glm::mat4 viewMatrix = glm::mat4();
-	glm::vec3 lightPosition = sceneUBO.lightPositions[lightIndex];
+	glm::vec3 lightPosition = glm::vec3(0, 0, 0);
 	
 	// Cube map faces generally have to use -y as their up axis. http://stackoverflow.com/questions/11685608/convention-of-faces-in-opengl-cubemapping
 	// The math is also inverted due to this.
@@ -453,14 +457,16 @@ void Scene::updateCubeFace(uint32_t faceIndex, uint32_t lightIndex) {
 	// Render scene from cube face's point of view
 	vkCmdBeginRenderPass(offscreenPass.commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
+	PushConstants pushConstant(viewMatrix, lightIndex);
+
 	// Update shader push constant block
 	// Contains current face view matrix
 	vkCmdPushConstants(offscreenPass.commandBuffer,
 					   offscreenPipelineLayout,
 					   VK_SHADER_STAGE_VERTEX_BIT,
 					   0,
-					   sizeof(glm::mat4),
-					   &viewMatrix);
+					   sizeof(PushConstants),
+					   &pushConstant);
 
 	// Binding buffers and issuing draw calls per renderable
 	vkCmdBindPipeline(offscreenPass.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, offscreenPipeline);
@@ -468,8 +474,7 @@ void Scene::updateCubeFace(uint32_t faceIndex, uint32_t lightIndex) {
 	
 	VkDeviceSize offsets[] = { 0 };
 	for (std::vector<int>::size_type i = 0; i != renderableObjects.size(); i++) {
-		// First contains a bool for if we actually want to render this object
-		if (renderableObjects[i].first) {
+		if (renderableObjects[i].first.castShadows) {
 			VkBuffer currentVertexBuffer[] = { renderableObjects[i].second->getVertexBuffer() };
 			VkDescriptorSet currentDescriptorSet = renderableObjects[i].second->getDescriptorSet();
 
@@ -541,27 +546,18 @@ void Scene::buildOffscreenCommandBuffer() {
 	}
 
 	// Change image layout for all cubemap faces to transfer destination
-	for (int i = 0; i < NUM_LIGHTS; i++) {
+	for (int i = 0; i < shadowCubeMapImages.size(); i++) {
 		vulkanAPIHandler->transitionImageLayout(offscreenPass.commandBuffer, shadowCubeMapImages[i], OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, NUM_CUBE_FACES);
 	}
 
-	for (uint32_t i = 0; i < NUM_LIGHTS; i++) {
-		// TODO: Rather ugly and hacky way of telling the program to not render the ghost encasing the light. Would like to refactor this to be more generic
-		if (i > 0) {
-			renderableObjects[INDEX_OFFSET_BEFORE_GHOST + (i - 1)].first = false;
-		}
-		
+	for (uint32_t i = 0; i < shadowCubeMapImages.size(); i++) {
 		for (uint32_t face = 0; face < NUM_CUBE_FACES; face++) {
 			updateCubeFace(face, i);
-		}
-
-		if (i > 0) {
-			renderableObjects[INDEX_OFFSET_BEFORE_GHOST + (i - 1)].first = true;
 		}
 	}
 
 	// Change image layout for all cubemap faces to shader read after they have been copied
-	for (int i = 0; i < NUM_LIGHTS; i++) {
+	for (int i = 0; i < shadowCubeMapImages.size(); i++) {
 		vulkanAPIHandler->transitionImageLayout(offscreenPass.commandBuffer, shadowCubeMapImages[i], OFFSCREEN_FB_COLOR_FORMAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, NUM_CUBE_FACES);
 	}
 
@@ -580,7 +576,7 @@ void Scene::createOffscreenPipelineLayout() {
 
 	VkPushConstantRange pushConstantRange = {};
 	pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-	pushConstantRange.size = sizeof(glm::mat4);
+	pushConstantRange.size = sizeof(PushConstants);
 	pushConstantRange.offset = 0;
 	
 	pipelineLayoutInfo.pushConstantRangeCount = 1;

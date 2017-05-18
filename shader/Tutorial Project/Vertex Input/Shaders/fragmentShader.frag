@@ -57,8 +57,9 @@ vec4 calculateDiffuseColor(vec4 materialDiffuseColor, vec4 normal, vec4 lightDir
  */
 vec4 calculateSpecularColor(vec4 materialSpecularColor, vec4 normal, vec4 lightDirection, float specularExponent, vec4 lightColor);
 
+float scale(float inValue, float oldRangeStart, float oldRangeEnd, float newRangeStart, float newRangeEnd);
+
 void main() {
-	
 	vec4 materialDiffuseColor;
 	vec4 materialAmbientColor;
 	vec4 materialSpecularColor;
@@ -89,17 +90,21 @@ void main() {
 		// Light attenuation. Based on information from http://gamedev.stackexchange.com/questions/56897/glsl-light-attenuation-color-and-intensity-formula
 		float attenuation = pow(clamp(1.0 - dist*dist /(attenuationRadius*attenuationRadius), 0.0, 1.0), 2);
 		outColor += materialAmbientColor + attenuation*(renderableMaterial.diffuseGain * diffuseColor + specularColor * renderableMaterial.specularGain); 
-	}
-	
-	// Shadow
-	for(int i = 0; i < NUM_LIGHTS; i++) {
-		vec4 lightDirection = lightPosition_worldspace - vertexPosition_worldspace;
-		float sampledDistance = texture(shadowSampler[i], lightDirection.xyz).r;
-		float distance = length(lightDirection);
+		
+		if(i == 1) {
+		// Shadows
+		vec4 lightDirection_worldspace = lightPosition_worldspace - vertexPosition_worldspace;
+		float sampledDistance = texture(shadowSampler[i], lightDirection_worldspace.xyz).r;
+		float distance = length(lightDirection_worldspace);
 		
 		float shadow = (distance <= sampledDistance + EPSILON) ? 1.0 : SHADOW_OPACITY;
 		outColor.rgb *= shadow;
+		}
 	}
+}
+
+float scale(float inValue, float oldRangeStart, float oldRangeEnd, float newRangeStart, float newRangeEnd) {
+	return (((newRangeEnd - newRangeStart)*(inValue - oldRangeStart)) / (oldRangeEnd - oldRangeStart)) + newRangeStart;
 }
 
 vec4 calculateDiffuseColor(vec4 materialDiffuseColor, vec4 normal, vec4 lightDirection, vec4 lightColor) {

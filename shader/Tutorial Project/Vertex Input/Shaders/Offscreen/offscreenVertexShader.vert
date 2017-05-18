@@ -14,12 +14,14 @@ layout(set = RENDERABLE_UBO, binding = 0) uniform RenderableUBO {
 
 layout(set = SCENE_UBO, binding = 0) uniform SceneUBO {
 	mat4 ProjectionMatrix;
+	mat4 lightOffsetMatrices[NUM_LIGHTS];
 	vec4 lightPositions_worldspace[NUM_LIGHTS];
 	vec4 lightColors[NUM_LIGHTS];
 } sceneUBO;
 
 layout(push_constant) uniform PushConsts  {
 	mat4 view;
+	int currentMatrixIndex;
 } pushConsts;
 
 // Input values
@@ -30,8 +32,8 @@ layout(location = 0) out vec4 vertexPosition_worldspace;
 layout(location = 1) out vec4 lightPosition_worldspace;
 
 void main() {
-    gl_Position = sceneUBO.ProjectionMatrix * pushConsts.view * renderableUBO.ModelMatrix * vertexPosition_modelspace;
+    gl_Position = sceneUBO.ProjectionMatrix * pushConsts.view * sceneUBO.lightOffsetMatrices[pushConsts.currentMatrixIndex] * renderableUBO.ModelMatrix  * vertexPosition_modelspace;
 	
-	vertexPosition_worldspace = renderableUBO.ModelMatrix * vertexPosition_modelspace;
+	vertexPosition_worldspace = renderableUBO.ModelMatrix  * vertexPosition_modelspace;
 	lightPosition_worldspace = sceneUBO.lightPositions_worldspace[0];
 }

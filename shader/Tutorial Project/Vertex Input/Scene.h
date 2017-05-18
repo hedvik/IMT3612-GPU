@@ -44,14 +44,14 @@ public:
 
 	VkSemaphore getOffscreenSemaphore();
 	VkCommandBuffer getOffscreenCommandBuffer();
-	std::vector<std::pair<bool, std::shared_ptr<Renderable>>> getRenderableObjects();
+	std::vector<std::pair<RenderableInformation, std::shared_ptr<Renderable>>> getRenderableObjects();
 	VkDescriptorSetLayout getDescriptorSetLayout(DescriptorLayoutType type);
 	VkDescriptorSet getDescriptorSet();
 private:
 	VulkanAPIHandler* vulkanAPIHandler;
 	VkDescriptorSet descriptorSet;
 
-	std::vector<std::pair<bool, std::shared_ptr<Renderable>>> renderableObjects{};
+	std::vector<std::pair<RenderableInformation, std::shared_ptr<Renderable>>> renderableObjects{};
 	std::shared_ptr<RenderableMaze> maze;
 	std::shared_ptr<Pacman> pacman;
 	std::vector<std::shared_ptr<Ghost>> ghosts;

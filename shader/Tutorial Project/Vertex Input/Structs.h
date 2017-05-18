@@ -22,8 +22,19 @@ struct RenderableMaterialUBO {
 
 struct SceneUBO {
 	glm::mat4 projectionMatrix;
+	glm::mat4 lightOffsetMatrices[NUM_LIGHTS];
 	glm::vec4 lightPositions[NUM_LIGHTS];
 	glm::vec4 lightColors[NUM_LIGHTS];
+};
+
+struct PushConstants {
+	glm::mat4 vireMatrix;
+	int currentMatrixIndex;
+
+	PushConstants(glm::mat4 view, int index) {
+		vireMatrix = view;
+		currentMatrixIndex = index;
+	}
 };
 
 struct Vertex {
@@ -78,6 +89,26 @@ struct FrameBufferAttachment {
 	VkImage image;
 	VkDeviceMemory memory;
 	VkImageView view;
+};
+
+enum RenderableType {
+	RENDERABLE_PACMAN = 0,
+	RENDERABLE_MAZE,
+	RENDERABLE_GHOST
+};
+
+struct RenderableInformation {
+	bool castShadows{ true };
+	RenderableType type;
+
+	RenderableInformation(RenderableType renderType) {
+		type = renderType;
+	}
+
+	RenderableInformation(RenderableType renderType, bool castShadow) {
+		castShadows = castShadow;
+		type = renderType;
+	}
 };
 
 struct OffscreenPass {
