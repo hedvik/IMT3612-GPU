@@ -35,5 +35,5 @@ void main() {
     gl_Position = sceneUBO.ProjectionMatrix * pushConsts.view * sceneUBO.lightOffsetMatrices[pushConsts.currentMatrixIndex] * renderableUBO.ModelMatrix  * vertexPosition_modelspace;
 	
 	vertexPosition_worldspace = renderableUBO.ModelMatrix  * vertexPosition_modelspace;
-	lightPosition_worldspace = sceneUBO.lightPositions_worldspace[0];
+	lightPosition_worldspace = sceneUBO.lightPositions_worldspace[pushConsts.currentMatrixIndex];
 }

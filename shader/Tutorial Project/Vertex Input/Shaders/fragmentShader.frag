@@ -14,6 +14,7 @@ layout(set = RENDERABLE_UBO, binding = BINDING_MATERIAL) uniform RenderableMater
 	float specularExponent;
 	float specularGain;
 	float diffuseGain;
+	bool selfShadowEnabled;
 } renderableMaterial;
 
 layout(location = 0) in vec4 vertexPosition_cameraspace;
@@ -21,9 +22,9 @@ layout(location = 1) in vec4 fragmentColor;
 layout(location = 2) in vec4 fragmentTextureCoordinate;
 layout(location = 3) in vec4 normal_cameraspace;
 layout(location = 4) in vec4 vertexPosition_worldspace;
-layout(location = 5) in vec4 lightPosition_worldspace;
-layout(location = 6) in vec4 lightPositions_cameraspace[NUM_LIGHTS];
-layout(location = 12) in vec4 lightColors[NUM_LIGHTS];
+layout(location = 5) in vec4 lightPositions_worldspace[NUM_LIGHTS];
+layout(location = 10) in vec4 lightPositions_cameraspace[NUM_LIGHTS];
+layout(location = 15) in vec4 lightColors[NUM_LIGHTS];
 
 layout(location = 0) out vec4 outColor;
 
@@ -72,8 +73,7 @@ void main() {
 	// Normal of the computed fragment, in camera space
 	vec4 normal = normalize(normal_cameraspace);
 	
-    int i;
-	for(i = 0; i < NUM_LIGHTS; i++) {
+	for(int i = 0; i < NUM_LIGHTS; i++) {
 		materialDiffuseColor = coloredTexture * diffuseComponent;
 		materialAmbientColor = materialDiffuseColor * ambientComponent;
 		materialSpecularColor = specularComponent;
@@ -90,15 +90,17 @@ void main() {
 		// Light attenuation. Based on information from http://gamedev.stackexchange.com/questions/56897/glsl-light-attenuation-color-and-intensity-formula
 		float attenuation = pow(clamp(1.0 - dist*dist /(attenuationRadius*attenuationRadius), 0.0, 1.0), 2);
 		outColor += materialAmbientColor + attenuation*(renderableMaterial.diffuseGain * diffuseColor + specularColor * renderableMaterial.specularGain); 
-		
-		if(i == 1) {
-		// Shadows
-		vec4 lightDirection_worldspace = lightPosition_worldspace - vertexPosition_worldspace;
-		float sampledDistance = texture(shadowSampler[i], lightDirection_worldspace.xyz).r;
-		float distance = length(lightDirection_worldspace);
-		
-		float shadow = (distance <= sampledDistance + EPSILON) ? 1.0 : SHADOW_OPACITY;
-		outColor.rgb *= shadow;
+	}
+	
+	for(int i = 0; i < NUM_LIGHTS; i++) {
+		if(renderableMaterial.selfShadowEnabled) {
+			// Shadows
+			vec4 lightDirection_worldspace = lightPositions_worldspace[i] - vertexPosition_worldspace;
+			float sampledDistance = texture(shadowSampler[i], lightDirection_worldspace.xyz).r;
+			float distance = length(lightDirection_worldspace);
+			
+			float shadow = (distance <= sampledDistance + EPSILON) ? 1.0 : SHADOW_OPACITY;
+			outColor.rgb *= shadow;
 		}
 	}
 }

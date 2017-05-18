@@ -14,6 +14,7 @@ Ghost::Ghost(SceneUBO* uboPtr,
 	pacmanPtr = pacPtr;
 	sceneUBOPtr->lightColors[sceneUBOLightIndex] = c;
 	material.diffuseGain = 5;
+	material.selfShadowEnabled = false;
 	movementSpeed *= 0.75f;
 }
 

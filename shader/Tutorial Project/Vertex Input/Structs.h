@@ -18,6 +18,7 @@ struct RenderableMaterialUBO {
 	float specularExponent{128.0};
 	float specularGain{1};
 	float diffuseGain{1};
+	bool selfShadowEnabled{true};
 };
 
 struct SceneUBO {
