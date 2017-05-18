@@ -31,8 +31,8 @@ layout(location = 0) out vec4 outColor;
 // The color white
 const vec4 WHITE = vec4(1.0, 1.0, 1.0, 1.0);
 
-// Default material for everything. Might want this as a part of the RenderableUBO
-const float ambientComponent = 0.25f;
+// Global material values.
+const float ambientComponent = 0.05f;
 const float diffuseComponent = 0.5f;
 const vec4 specularComponent = WHITE;
 
@@ -92,22 +92,10 @@ void main() {
 		outColor += materialAmbientColor + attenuation*(renderableMaterial.diffuseGain * diffuseColor + specularColor * renderableMaterial.specularGain); 
 	}
 	
-	/*
-	for(int i = 0; i < NUM_LIGHTS; i++) {
-		if(renderableMaterial.selfShadowEnabled) {
-			// Shadows
-			vec4 lightDirection_worldspace = lightPositions_worldspace[i] - vertexPosition_worldspace;
-			float sampledDistance = texture(shadowSampler[i], lightDirection_worldspace.xyz).r;
-			float distance = length(lightDirection_worldspace);
-			
-			float shadow = (distance <= sampledDistance + EPSILON) ? 1.0 : SHADOW_OPACITY;
-			outColor.rgb *= shadow;
-		}
-	}*/
-	
-	float lightAccumulation = 1.0;
-	bool isLit = false;
 	if(renderableMaterial.selfShadowEnabled) {
+	    float lightAccumulation = 1.0;
+		bool isLit = false;
+		
 		for(int i = 0; i < NUM_LIGHTS; i++) {
 			// Shadows
 			vec4 lightDirection_worldspace = lightPositions_worldspace[i] - vertexPosition_worldspace;
@@ -122,14 +110,16 @@ void main() {
 				isLit = true;
 			}
 		}
+		
 		if(isLit) {
 			lightAccumulation = 1.0;
 		}
 		else {
-		lightAccumulation = clamp(lightAccumulation, 0.0, 1.0);
+			lightAccumulation = clamp(lightAccumulation, 0.0, 1.0);
 		}
+		
+		outColor.rgb *= lightAccumulation;
 	}
-	outColor.rgb *= lightAccumulation;
 }
 
 float scale(float inValue, float oldRangeStart, float oldRangeEnd, float newRangeStart, float newRangeEnd) {
