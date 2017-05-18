@@ -5,8 +5,8 @@
 #define BINDING_SAMPLER       1
 #define BINDING_MATERIAL      2
 #define NUM_LIGHTS                4
-#define EPSILON                       0.15
-#define SHADOW_OPACITY       0.5
+#define EPSILON                       0.5
+#define SHADOW_OPACITY       0.2
 
 layout(set = RENDERABLE_UBO, binding = BINDING_SAMPLER) uniform sampler2D textureSampler;
 layout(set = SCENE_UBO, binding = BINDING_SAMPLER) uniform samplerCube shadowSampler[NUM_LIGHTS];
@@ -92,6 +92,7 @@ void main() {
 		outColor += materialAmbientColor + attenuation*(renderableMaterial.diffuseGain * diffuseColor + specularColor * renderableMaterial.specularGain); 
 	}
 	
+	/*
 	for(int i = 0; i < NUM_LIGHTS; i++) {
 		if(renderableMaterial.selfShadowEnabled) {
 			// Shadows
@@ -102,7 +103,33 @@ void main() {
 			float shadow = (distance <= sampledDistance + EPSILON) ? 1.0 : SHADOW_OPACITY;
 			outColor.rgb *= shadow;
 		}
+	}*/
+	
+	float lightAccumulation = 1.0;
+	bool isLit = false;
+	if(renderableMaterial.selfShadowEnabled) {
+		for(int i = 0; i < NUM_LIGHTS; i++) {
+			// Shadows
+			vec4 lightDirection_worldspace = lightPositions_worldspace[i] - vertexPosition_worldspace;
+			float sampledDistance = texture(shadowSampler[i], lightDirection_worldspace.xyz).r;
+			float distance = length(lightDirection_worldspace);
+			
+			// If we are in a shadowed area
+			if (distance >= sampledDistance + EPSILON) {
+				lightAccumulation -= SHADOW_OPACITY;
+			}  
+			else {
+				isLit = true;
+			}
+		}
+		if(isLit) {
+			lightAccumulation = 1.0;
+		}
+		else {
+		lightAccumulation = clamp(lightAccumulation, 0.0, 1.0);
+		}
 	}
+	outColor.rgb *= lightAccumulation;
 }
 
 float scale(float inValue, float oldRangeStart, float oldRangeEnd, float newRangeStart, float newRangeEnd) {
