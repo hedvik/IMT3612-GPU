@@ -34,10 +34,21 @@ int main() {
 	glfwSetWindowUserPointer(window, &vulkanAPIHandler);
 
 	auto lastTime = std::chrono::high_resolution_clock::now();
+	int numberOfFrames = 0;
+	double frameRateDisplayTimer = 0;
 	while (!glfwWindowShouldClose(window)) {
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		float deltaTime = std::chrono::duration_cast<ms>(currentTime - lastTime).count();
 		lastTime = currentTime;
+		numberOfFrames++;
+
+		// Measuring frame latency. Based on http://www.opengl-tutorial.org/miscellaneous/an-fps-counter/
+		frameRateDisplayTimer += deltaTime;
+		if (frameRateDisplayTimer >= 1000.0) {
+			printf("%f ms/frame\n", 1000.0 / double(numberOfFrames));
+			frameRateDisplayTimer = 0;
+			numberOfFrames = 0;
+		}
 
 		glfwPollEvents();
 		vulkanAPIHandler.updateUniformBuffers();
